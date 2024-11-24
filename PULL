@@ -1,0 +1,340 @@
+//// S.R.N Robotics
+// Nadia Al-Shewear
+// Rogelio Lucio
+// Samuel Winburn
+
+
+
+#include <DFRobot_BMI160.h>
+
+// IR Sensor Pins 
+int IRSensor1 = 36;
+int IRSensor2 = 39;
+int IRSensor3 = 34;
+int IRSensor4 = 35;
+
+// Declarations for the BMI160
+DFRobot_BMI160 bmi160;
+const int8_t i2c_addr = 0x69;
+
+
+// Motor Control Pins
+const int L_IN1 = 2;   // Control pin 1 for left motor
+const int L_IN2 = 0;   // Control pin 2 for left motor
+const int R_IN3 = 4;   // Control pin 1 for right motor
+const int R_IN4 = 16;  // Control pin 2 for right motor
+
+// PWM frequency and resolution settings for ESP32
+const int PWMFreq = 1000;       // PWM frequency in Hz
+const int PWMResolution = 8;    // PWM resolution (8 bits)
+const int MAX_SPEED = 255;      // Maximum PWM duty cycle
+
+
+// Shared variables between tasks
+volatile bool finishLineReached = false; // Flag for endline detection
+volatile uint8_t boundaryCode = 0x0;
+
+
+// Task handles for dual-core operations
+TaskHandle_t Task1;
+TaskHandle_t Task2;
+
+// Function Declarations
+void TaskSensors(void *parameter);
+void TaskNavigation(void *parameter);
+void handleBoundary(uint8_t sensorState);
+void Forward();
+void Reverse();
+void StopMotors();
+void RotateToAngle(float setpoint);
+float readGyro();
+uint8_t IR_Sensor_read();
+void IR_Sensor_setup();
+
+void setup() {
+  Serial.begin(115200);
+
+  IR_Sensor_setup();
+
+  // Motor pin setup
+  ledcAttach(L_IN1,  PWMFreq, PWMResolution);
+  ledcAttach(L_IN2,  PWMFreq, PWMResolution);
+  ledcAttach(R_IN3,  PWMFreq, PWMResolution);
+  ledcAttach(R_IN4,  PWMFreq, PWMResolution);
+
+  //init the hardware bmin160  
+  if (bmi160.softReset() != BMI160_OK){
+    Serial.println("reset false");
+    while(1);
+  }
+  
+  //set and init the bmi160 i2c address
+  if (bmi160.I2cInit(i2c_addr) != BMI160_OK){
+    Serial.println("init false");
+    while(1);
+  }
+
+   // Create the sensor and navigation tasks
+  xTaskCreatePinnedToCore(TaskSensors, "TaskSensors", 10000, NULL, 2, &Task1, 1);  // Core 1 for sensors and state management
+  xTaskCreatePinnedToCore(TaskNavigation, "TaskNavigation", 10000, NULL, 2, &Task2, 0);  // Core 0 for motor control
+}
+
+void loop() {
+  delay(100);
+}
+
+// Task on Core 0: Reads the IR sensors 
+void TaskSensors(void *parameter) {
+  while (true) {
+  boundaryCode = IR_Sensor_read();
+   vTaskDelay(50 / portTICK_PERIOD_MS); // 50 ms delay
+  }
+}
+
+// ** Task: Navigation (Core 0) **
+void TaskNavigation(void *parameter) {
+  while (true) {
+    if (finishLineReached) {
+      StopMotors();
+      Serial.println("Navigation stopped. Finish line reached.");
+      vTaskDelay(portMAX_DELAY); 
+    }
+
+    handleBoundary(boundaryCode);
+    vTaskDelay(100 / portTICK_PERIOD_MS); 
+  }
+}
+
+
+void handleBoundary(uint8_t sensorState) {
+    switch (sensorState) {
+        case 0x8:  // Front-Left boundary detected
+            Serial.println("Boundary detected on Front-Left.");
+            Reverse();         // Briefly reverse to avoid the boundary
+            RotateToAngle(15); // Slight turn to the right
+            break;
+
+        case 0x4:  // Front-Right boundary detected
+            Serial.println("Boundary detected on Front-Right.");
+            Reverse();         // Briefly reverse to avoid the boundary
+            RotateToAngle(-15); // Slight turn to the left
+            break;
+
+        case 0x2:  // Back-Left boundary detected
+            Serial.println("Boundary detected on Back-Left.");
+            RotateToAngle(15); // Slight turn to the right
+            break;
+
+        case 0x1:  // Back-Right boundary detected
+            Serial.println("Boundary detected on Back-Right.");
+            RotateToAngle(-15); // Slight turn to the left
+            break;
+
+        case 0xA:  // Left boundary detected (Front-Left + Back-Left)
+            Serial.println("Left boundary detected.");
+            Reverse();         // Reverse slightly
+            RotateToAngle(15); // Turn to the right to avoid
+            break;
+
+        case 0x5:  // Right boundary detected (Front-Right + Back-Right)
+            Serial.println("Right boundary detected.");
+            Reverse();         // Reverse slightly
+            RotateToAngle(-15); // Turn to the left to avoid
+            break;
+
+        case 0xC:  // End of field detected (Front-Left + Front-Right)
+            Serial.println("End of field detected! Stopping.");
+            StopMotors();           // Stop the bot completely
+            finishLineReached = true; // Set the flag to stop further movement
+            break;
+
+        default:   // No boundary detected
+            Forward();
+            break;
+    }
+}
+
+
+void Forward() {
+  const float maxPWM = 255;    
+  const float setpoint = 0;    
+  float angle = 0;             
+  float error = 0;             
+  float PWM_L = maxPWM;        
+  float PWM_R = maxPWM;        
+  const float Kp = maxPWM / 180; // Proportional gain for error correction (adjust as needed)
+
+  // Start motors at full speed
+  ledcWrite(L_IN1, maxPWM); // Left motor forward
+  ledcWrite(L_IN2, 0);      // Left motor backward
+  ledcWrite(R_IN3, maxPWM); // Right motor forward
+  ledcWrite(R_IN4, 0);      // Right motor backward
+
+  while (true) {
+    // Read gyroscope and update angle (integrate angular velocity over time)
+    float gyroRate = readGyro(); // Replace with actual gyro function
+    angle += gyroRate * 0.01;    // Assume 10ms loop time (adjust based on actual timing)
+
+    // Calculate error (setpoint - current angle)
+    error = setpoint - angle;
+
+    // Proportional correction based on error
+    PWM_L = maxPWM - (Kp * error); // Reduce left motor speed if drifting right
+    PWM_R = maxPWM + (Kp * error); // Reduce right motor speed if drifting left
+
+    // Constrain PWM values to avoid exceeding limits
+    PWM_L = constrain(PWM_L, 0, maxPWM);
+    PWM_R = constrain(PWM_R, 0, maxPWM);
+
+    // Apply corrected PWM values
+    ledcWrite(L_IN1, int(PWM_L)); // Adjust left motor speed
+    ledcWrite(L_IN2, 0);
+    ledcWrite(R_IN3, int(PWM_R)); // Adjust right motor speed
+    ledcWrite(R_IN4, 0);
+
+    // Small delay to match integration time
+    delay(10); // 10ms loop (adjust based on your system)
+  }
+}
+
+void TurnRight() {
+  int speed = 150; 
+  Serial.println("Sharp Right Turn.");
+  ledcWrite(L_IN1, speed);
+  ledcWrite(L_IN2, 0);
+  ledcWrite(R_IN3, 0);  
+  ledcWrite(R_IN4, 0);
+  delay(100);
+}
+
+void TuenLeft() {
+  int speed = 150; 
+  Serial.println("Sharp Left Turn.");
+  ledcWrite(L_IN1, 0);  
+  ledcWrite(L_IN2, 0);
+  ledcWrite(R_IN3, speed);  
+  ledcWrite(R_IN4, 0);
+  delay(100);
+}
+
+void Reverse() {
+    int speed = 200; 
+    ledcWrite(L_IN1, 0);             
+    ledcWrite(L_IN2, speed);            
+    ledcWrite(R_IN3, 0);             
+    ledcWrite(R_IN4, speed);            
+    delay(500);
+}
+
+void StopMotors() {
+  ledcWrite(L_IN1, 0);
+  ledcWrite(L_IN2, 0);
+  ledcWrite(R_IN3, 0);
+  ledcWrite(R_IN4, 0);
+}
+
+float readGyro() {
+  static float angle = 0;       // Cumulative angle
+  const float gyroScale = 0.6;  // Scaling factor (adjust based on calibration)
+  const float offset = 11.85;   // Offset (adjust based on calibration)
+  const float deadZone = 0.15;  // Dead zone threshold
+  const float dt = 0.05;        // Time interval (50 ms)
+
+  int16_t accelGyro[6] = {0};
+  int rslt = bmi160.getAccelGyroData(accelGyro);
+
+  if (rslt == 0) {
+    // Extract yaw rate from gyro data 
+    float rawYaw = accelGyro[2];
+    float Yaw = ((rawYaw + offset) / 128) * gyroScale;
+
+    // Apply dead zone to filter noise
+    if (Yaw > deadZone) {
+      angle += Yaw * dt; // Positive yaw rate
+    } else if (Yaw < -deadZone) {
+      angle += Yaw * dt; // Negative yaw rate
+    }
+    // No change if Yaw is within the dead zone
+  } else {
+    Serial.println("Error reading BMI160 data");
+  }
+
+  return angle;
+}
+
+void RotateToAngle(float setpoint) {
+    float angle = 0;              // Current cumulative angle
+    float error = setpoint;       // Initial error
+    float Kp = 1.0;               // Proportional gain (adjust experimentally)
+    float PWM_L = 0;              // Left motor PWM
+    float PWM_R = 0;              // Right motor PWM
+    const float deadZone = 1.0;   // Acceptable error threshold (degrees)
+
+    while (fabs(error) > deadZone) {
+        // Update current angle from gyroscope
+        angle += readGyro(); // Ensure readGyro() integrates angular velocity
+
+        // Calculate error
+        error = setpoint - angle;
+
+        // Proportional control for PWM
+        float correction = Kp * error;
+
+        // Constrain correction to valid PWM range
+        correction = constrain(correction, -255, 255);
+
+        // Set PWM values for rotation
+        if (correction > 0) {
+            PWM_L = correction;  // Left motor forward
+            PWM_R = -correction; // Right motor backward
+        } else {
+            PWM_L = correction;  // Left motor backward
+            PWM_R = -correction; // Right motor forward
+        }
+
+        // Apply PWM to motors
+        if (PWM_L > 0) {
+            ledcWrite(L_IN1, int(PWM_L));
+            ledcWrite(L_IN2, 0);
+        } else {
+            ledcWrite(L_IN1, 0);
+            ledcWrite(L_IN2, int(-PWM_L));
+        }
+
+        if (PWM_R > 0) {
+            ledcWrite(R_IN3, int(PWM_R));
+            ledcWrite(R_IN4, 0);
+        } else {
+            ledcWrite(R_IN3, 0);
+            ledcWrite(R_IN4, int(-PWM_R));
+        }
+
+        delay(10); // Small delay for stability
+    }
+
+    // Stop motors after reaching the target
+    ledcWrite(L_IN1, 0);
+    ledcWrite(L_IN2, 0);
+    ledcWrite(R_IN3, 0);
+    ledcWrite(R_IN4, 0);
+}
+
+// Function to read the IR sensors and return a binary/hex value
+uint8_t IR_Sensor_read() {
+  int s1 = digitalRead(IRSensor1); // Front-Left
+  int s2 = digitalRead(IRSensor2); // Front-Right
+  int s3 = digitalRead(IRSensor3); // Back-Left
+  int s4 = digitalRead(IRSensor4); // Back-Right
+
+  // Combine sensor states into a 4-bit binary value
+  uint8_t state = (s4 << 3) | (s3 << 2) | (s2 << 1) | s1;
+  return state;
+}
+
+void IR_Sensor_setup() {
+  pinMode(IRSensor1, INPUT);
+  pinMode(IRSensor2, INPUT);
+  pinMode(IRSensor3, INPUT);
+  pinMode(IRSensor4, INPUT);
+}
+
