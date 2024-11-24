@@ -30,8 +30,6 @@ const int R_IN4 = 16;  // Control pin 2 for right motor
 const int PWMFreq = 1000;       // PWM frequency in Hz
 const int PWMResolution = 8;    // PWM resolution (8 bits)
 const int MAX_SPEED = 255;      // Maximum PWM duty cycle
-const int MIN_SPEED = 0;        // Minimum PWM duty cycle
-const int STEP_DELAY = 1000;      // Delay between speed steps (in milliseconds)
 
 
 // Thresholds
@@ -61,6 +59,7 @@ void Reverse();
 void turnLeft();
 void turnRight();
 void changeState();
+void RotateSearch();
 
 
 void setup() {
@@ -111,8 +110,6 @@ void TaskSensors(void *pvParameters) {
 // Core 0: Navigation and motor control
 void TaskNavigation(void *pvParameters) {
   for (;;) {
-
-
     switch (currentState) {
       case SEARCHING:
       Serial.println("Searching.");
