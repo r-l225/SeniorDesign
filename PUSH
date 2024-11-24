@@ -161,12 +161,12 @@ void handleBoundaryMovement() {
       break;
     case 0xD:
       Reverse();
-      sharpRight();
+      RotateToAngle(-90);
       Serial.println("D");
       break;
       case 0xE:
       Reverse();
-      sharpRight();
+      RotateToAngle(90);
       Serial.println("E");
       break;
     case 0x3:
@@ -175,15 +175,15 @@ void handleBoundaryMovement() {
       break;
     case 0xC:
       Reverse();
-      sharpRight();
+      RotateToAngle(90);
       Serial.println("C");
       break;
     case 0x5:
-      sharpLeft();
+      RotateToAngle(-90);
       Serial.println("5");
       break;
     case 0xA:
-      sharpRight();
+     RotateToAngle(90);
       Serial.println("A");
       break;
     default:
