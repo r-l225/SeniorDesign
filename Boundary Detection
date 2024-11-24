@@ -1,0 +1,126 @@
+// IR Sensor Pins 
+int IRSensor1 = 36;
+int IRSensor2 = 39;
+int IRSensor3 = 34;
+int IRSensor4 = 35;
+
+// Motor Control Pins
+const int L_IN1 = 2;   // Control pin 1 for left motor
+const int L_IN2 = 0;   // Control pin 2 for left motor
+const int R_IN3 = 4;   // Control pin 1 for right motor
+const int R_IN4 = 16;  // Control pin 2 for right motor
+
+// PWM frequency and resolution settings for ESP32
+const int PWMFreq = 1000;       // PWM frequency in Hz
+const int PWMResolution = 8;    // PWM resolution (8 bits)
+const int MAX_SPEED = 255;      // Maximum PWM duty cycle
+
+// Variables
+volatile uint8_t boundaryCode = 0xF;
+
+// Function Prototypes
+void IR_Sensor_setup();
+uint8_t IR_Sensor_read();
+void handleBoundaryMovement();
+void Forward();
+void Reverse();
+void StopMotors();
+void RotateToAngle(float setpoint);
+
+void setup() {
+  Serial.begin(115200);
+
+  // Initialize IR sensors
+  IR_Sensor_setup();
+
+  // Motor pin setup
+  ledcAttach(L_IN1, PWMFreq, PWMResolution);
+  ledcAttach(L_IN2, PWMFreq, PWMResolution);
+  ledcAttach(R_IN3, PWMFreq, PWMResolution);
+  ledcAttach(R_IN4, PWMFreq, PWMResolution);
+}
+
+void loop() {
+  boundaryCode = IR_Sensor_read();
+  handleBoundaryMovement();
+  delay(100);
+}
+
+// ** IR Sensor Setup **
+void IR_Sensor_setup() {
+  pinMode(IRSensor1, INPUT);
+  pinMode(IRSensor2, INPUT);
+  pinMode(IRSensor3, INPUT);
+  pinMode(IRSensor4, INPUT);
+}
+
+// ** Read IR Sensors **
+uint8_t IR_Sensor_read() {
+  int status1 = digitalRead(IRSensor1);
+  int status2 = digitalRead(IRSensor2);
+  int status3 = digitalRead(IRSensor3);
+  int status4 = digitalRead(IRSensor4);
+
+  return (status4 << 3) | (status3 << 2) | (status2 << 1) | status1;
+}
+
+// ** Handle Boundary Movement **
+void handleBoundaryMovement() {
+  switch (boundaryCode) {
+    case 0x7:
+    case 0xB:
+    case 0x3:
+      Forward();
+      break;
+
+    case 0xD:  // Left boundary
+      Reverse();
+      RotateToAngle(-90);
+      break;
+
+    case 0xE:  // Right boundary
+      Reverse();
+      RotateToAngle(90);
+      break;
+
+    case 0xC:  // Front boundary
+      Reverse();
+      RotateToAngle(90);
+      break;
+
+    default:
+      Forward();
+      break;
+  }
+}
+
+// ** Forward Movement **
+void Forward() {
+  ledcWrite(L_IN1, MAX_SPEED);
+  ledcWrite(L_IN2, 0);
+  ledcWrite(R_IN3, MAX_SPEED);
+  ledcWrite(R_IN4, 0);
+}
+
+// ** Reverse Movement **
+void Reverse() {
+  ledcWrite(L_IN1, 0);
+  ledcWrite(L_IN2, MAX_SPEED);
+  ledcWrite(R_IN3, 0);
+  ledcWrite(R_IN4, MAX_SPEED);
+  delay(500);
+  StopMotors();
+}
+
+// ** Stop Motors **
+void StopMotors() {
+  ledcWrite(L_IN1, 0);
+  ledcWrite(L_IN2, 0);
+  ledcWrite(R_IN3, 0);
+  ledcWrite(R_IN4, 0);
+}
+
+// ** Rotate to Desired Angle **
+void RotateToAngle(float setpoint) {
+  // Rotation logic here (use existing gyroscope-based code)
+}
