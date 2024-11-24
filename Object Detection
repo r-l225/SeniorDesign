@@ -1,0 +1,100 @@
+#include <DFRobot_BMI160.h>
+
+// Ultrasonic Sensor Pins
+const int trigPin = 26; 
+const int echoPin = 25; 
+
+// Motor Control Pins
+const int L_IN1 = 2;   // Control pin 1 for left motor
+const int L_IN2 = 0;   // Control pin 2 for left motor
+const int R_IN3 = 4;   // Control pin 1 for right motor
+const int R_IN4 = 16;  // Control pin 2 for right motor
+
+// PWM frequency and resolution settings for ESP32
+const int PWMFreq = 1000;       // PWM frequency in Hz
+const int PWMResolution = 8;    // PWM resolution (8 bits)
+const int MAX_SPEED = 255;      // Maximum PWM duty cycle
+
+// Thresholds
+const int detectionThreshold = 40;
+
+// Variables
+volatile bool opponentDetected = false;
+
+// Function Prototypes
+void ultra_Sensor_setup();
+float ultra_Sensor_read();
+void Forward();
+void RotateSearch();
+void StopMotors();
+
+void setup() {
+  Serial.begin(115200);
+
+  // Initialize Ultrasonic Sensor
+  ultra_Sensor_setup();
+
+  // Motor pin setup
+  ledcAttach(L_IN1, PWMFreq, PWMResolution);
+  ledcAttach(L_IN2, PWMFreq, PWMResolution);
+  ledcAttach(R_IN3, PWMFreq, PWMResolution);
+  ledcAttach(R_IN4, PWMFreq, PWMResolution);
+}
+
+void loop() {
+  float distance = ultra_Sensor_read();
+
+  if (distance > 0 && distance < detectionThreshold) {
+    Serial.println("Object detected, moving forward.");
+    Forward();
+  } else {
+    Serial.println("No object detected, searching.");
+    RotateSearch();
+  }
+  delay(100);
+}
+
+// ** Ultrasonic Sensor Setup **
+void ultra_Sensor_setup() {
+  pinMode(trigPin, OUTPUT);
+  pinMode(echoPin, INPUT);
+}
+
+// ** Read Ultrasonic Sensor **
+float ultra_Sensor_read() {
+  digitalWrite(trigPin, LOW);
+  delayMicroseconds(2);
+  digitalWrite(trigPin, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(trigPin, LOW);
+
+  long duration = pulseIn(echoPin, HIGH);
+  return (duration * 0.034) / 2;
+}
+
+// ** Forward Movement **
+void Forward() {
+  ledcWrite(L_IN1, MAX_SPEED);
+  ledcWrite(L_IN2, 0);
+  ledcWrite(R_IN3, MAX_SPEED);
+  ledcWrite(R_IN4, 0);
+}
+
+// ** Rotate Search **
+void RotateSearch() {
+  // Rotate logic to search for object
+  ledcWrite(L_IN1, MAX_SPEED);
+  ledcWrite(L_IN2, 0);
+  ledcWrite(R_IN3, 0);
+  ledcWrite(R_IN4, MAX_SPEED);
+  delay(1000);  // Adjust delay for rotation
+  StopMotors();
+}
+
+// ** Stop Motors **
+void StopMotors() {
+  ledcWrite(L_IN1, 0);
+  ledcWrite(L_IN2, 0);
+  ledcWrite(R_IN3, 0);
+  ledcWrite(R_IN4, 0);
+}
