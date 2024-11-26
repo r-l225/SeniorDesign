@@ -4,7 +4,7 @@
 // Samuel Winburn
 #include <DFRobot_BMI160.h>
 
-
+SemaphoreHandle_t stateMutex;
 
 // IR Sensor Pins 
 int IRSensor1 = 36;
@@ -33,7 +33,7 @@ const int MAX_SPEED = 255;      // Maximum PWM duty cycle
 
 
 // Thresholds
-const int detectionThreshold = 40;
+const int detectionThreshold = 80;
 
 // State Machine
 enum State { SEARCHING, MOVING_FORWARD, AVOID, STOPPED };
@@ -68,6 +68,7 @@ void setup() {
   IR_Sensor_setup();
   ultra_Sensor_setup();
 
+  stateMutex = xSemaphoreCreateMutex();
 
   // Motor pin setup
   ledcAttach(L_IN1,  PWMFreq, PWMResolution);
@@ -89,18 +90,23 @@ void setup() {
 
   // Create the sensor and navigation tasks
   xTaskCreatePinnedToCore(TaskSensors, "TaskSensors", 10000, NULL, 2, &Task1, 1);  // Core 1 for sensors and state management
-  xTaskCreatePinnedToCore(TaskNavigation, "TaskNavigation", 10000, NULL, 2, &Task2, 0);  // Core 0 for motor control
+  xTaskCreatePinnedToCore(TaskNavigation, "TaskNavigation", 10000, NULL, 3, &Task2, 0);  // Core 0 for motor control
 }
 
 void loop() {
 }
 
 // Core 1: Sensor data collection and state management
+// In TaskSensors:
 void TaskSensors(void *pvParameters) {
   for (;;) {
-    boundaryCode = IR_Sensor_read();
-    float distance = ultra_Sensor_read();
-    opponentDetected = (distance < detectionThreshold);
+    uint8_t newBoundaryCode = IR_Sensor_read();
+
+    xSemaphoreTake(stateMutex, portMAX_DELAY);
+    boundaryCode = newBoundaryCode;
+    xSemaphoreGive(stateMutex);
+
+
     changeState();
     vTaskDelay(100 / portTICK_PERIOD_MS);
   }
@@ -110,39 +116,62 @@ void TaskSensors(void *pvParameters) {
 // Core 0: Navigation and motor control
 void TaskNavigation(void *pvParameters) {
   for (;;) {
-    switch (currentState) {
+    
+    float distance = ultra_Sensor_read();
+    bool detected = (distance < detectionThreshold); // Local variable
+    opponentDetected = detected;
+
+    changeState();
+
+
+    State localState;
+
+    // Lock only to read the currentState
+    xSemaphoreTake(stateMutex, portMAX_DELAY);
+    localState = currentState;
+    xSemaphoreGive(stateMutex);
+
+    switch (localState) {
       case SEARCHING:
-      Serial.println("Searching.");
-      RotateSearch();
+        RotateSearch();
         break;
       case MOVING_FORWARD:
-      Serial.println("Moving Forward.");
         Forward();
         break;
-        case AVOID:
-      Serial.println("Avoid.");
-       handleBoundaryMovement();
+      case AVOID:
+        handleBoundaryMovement();
         break;
       case STOPPED:
-      Serial.println("Stopped.");
-      StopMotors();
+        StopMotors();
         break;
     }
-    vTaskDelay(100/ portTICK_PERIOD_MS);
+
+    vTaskDelay(100 / portTICK_PERIOD_MS);
   }
 }
 
 // Handle state changes based on sensor input
 void changeState() {
+  State newState = currentState;  // Assume current state unless conditions dictate otherwise.
+
   if (boundaryCode != 0xF) {
-    currentState = AVOID;
-    Serial.println("State changed to avoid.");
+    newState = AVOID;
   } else if (opponentDetected) {
-    currentState = MOVING_FORWARD;
-    Serial.println("State changed to move forward.");
+    newState = MOVING_FORWARD;
   } else {
-    currentState = SEARCHING;
-    Serial.println("State cahnged to searching.");
+    newState = SEARCHING;
+  }
+
+  // Change state only if it's different.
+  if (newState != currentState) {
+    currentState = newState;
+    Serial.print("State changed to: ");
+    switch (currentState) {
+      case SEARCHING: Serial.println("SEARCHING."); break;
+      case MOVING_FORWARD: Serial.println("MOVING FORWARD."); break;
+      case AVOID: Serial.println("AVOID."); break;
+      case STOPPED: Serial.println("STOPPED."); break;
+    }
   }
 }
 
@@ -377,6 +406,7 @@ void Reverse() {
 void StopMotors() {
   ledcWrite(L_IN1, 0);
   ledcWrite(L_IN2, 0);
+
   ledcWrite(R_IN3, 0);
   ledcWrite(R_IN4, 0);
 }
