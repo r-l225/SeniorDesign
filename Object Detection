@@ -1,5 +1,9 @@
 #include <DFRobot_BMI160.h>
 
+// Declarations for the BMI160
+DFRobot_BMI160 bmi160;
+const int8_t i2c_addr = 0x69;
+
 // Ultrasonic Sensor Pins
 const int trigPin = 26; 
 const int echoPin = 25; 
@@ -16,10 +20,12 @@ const int PWMResolution = 8;    // PWM resolution (8 bits)
 const int MAX_SPEED = 255;      // Maximum PWM duty cycle
 
 // Thresholds
-const int detectionThreshold = 40;
+const int detectionThreshold = 60;
 
 // Variables
 volatile bool opponentDetected = false;
+volatile bool objectDetectedLock = false; // Semaphore to lock actions
+
 
 // Function Prototypes
 void ultra_Sensor_setup();
@@ -34,6 +40,18 @@ void setup() {
   // Initialize Ultrasonic Sensor
   ultra_Sensor_setup();
 
+  //init the hardware bmin160  
+  if (bmi160.softReset() != BMI160_OK){
+    Serial.println("reset false");
+    while(1);
+  }
+  
+  //set and init the bmi160 i2c address
+  if (bmi160.I2cInit(i2c_addr) != BMI160_OK){
+    Serial.println("init false");
+    while(1);
+  }
+
   // Motor pin setup
   ledcAttach(L_IN1, PWMFreq, PWMResolution);
   ledcAttach(L_IN2, PWMFreq, PWMResolution);
@@ -42,16 +60,32 @@ void setup() {
 }
 
 void loop() {
-  float distance = ultra_Sensor_read();
-
-  if (distance > 0 && distance < detectionThreshold) {
-    Serial.println("Object detected, moving forward.");
-    Forward();
-  } else {
-    Serial.println("No object detected, searching.");
-    RotateSearch();
-  }
-  delay(100);
+    float distance = ultra_Sensor_read();
+    
+    if (!objectDetectedLock) {
+        // Check for object
+        if (distance > 0 && distance < detectionThreshold) {
+            Serial.println("Object detected! Locking movement.");
+            objectDetectedLock = true; // Lock the action
+            StopMotors();
+            Forward(); // Move forward upon detection
+        } else {
+            Serial.println("No object detected, searching.");
+            RotateSearch();
+        }
+    } else {
+        // Object detected lock is active
+        if (distance > 0 && distance < detectionThreshold) {
+            // Continue moving forward while the object is detected
+            Serial.println("Object still detected. Continuing forward.");
+            Forward();
+        } else {
+            // Object no longer detected, unlock and return to search mode
+            Serial.println("Object lost. Resuming search.");
+            objectDetectedLock = false; // Unlock
+            StopMotors();
+        }
+    }
 }
 
 // ** Ultrasonic Sensor Setup **
@@ -60,16 +94,107 @@ void ultra_Sensor_setup() {
   pinMode(echoPin, INPUT);
 }
 
-// ** Read Ultrasonic Sensor **
 float ultra_Sensor_read() {
-  digitalWrite(trigPin, LOW);
-  delayMicroseconds(2);
-  digitalWrite(trigPin, HIGH);
-  delayMicroseconds(10);
-  digitalWrite(trigPin, LOW);
+    digitalWrite(trigPin, LOW);
+    delayMicroseconds(2);
+    digitalWrite(trigPin, HIGH);
+    delayMicroseconds(10);
+    digitalWrite(trigPin, LOW);
 
-  long duration = pulseIn(echoPin, HIGH);
-  return (duration * 0.034) / 2;
+    long duration = pulseIn(echoPin, HIGH, 30000); // Timeout in microseconds (30 ms)
+    if (duration == 0) {
+        return -1; // No echo detected
+    }
+    return (duration * 0.034) / 2; // Calculate distance in cm
+}
+
+// Read the Gyroscope
+float readGyro(){
+  float angle = 0;
+  int rslt;
+  int trash;
+  float Yaw = 0;
+  ////only read gyro data from bmi160
+  int16_t accelGyro[6]={0}; 
+  //get both accel and gyro data from bmi160
+  //parameter accelGyro is the pointer to store the data
+  rslt = bmi160.getAccelGyroData(accelGyro);
+
+  if(rslt == 0){
+    for(int i=0;i<6;i++){
+      if (i==2){
+        //the first three are gyro data
+        Yaw = (((accelGyro[i]+11.85)/128)*0.6);
+        if(Yaw > 0.15){
+          angle += Yaw;
+        }
+        else if(Yaw <= 0.15 and Yaw >=-0.15){
+          angle += 0;
+        }
+        else{
+          angle -= abs(Yaw);
+        }
+        //Serial.print(Yaw);Serial.print("\t"); Serial.print(Yaw/3.14); Serial.print("\t"); Serial.print(angle); Serial.print("\t");
+        //Serial.println(accelGyro[i]*3.14/180.0);
+      }
+      else{
+        //the following three data are accel data
+        trash = accelGyro[i];
+      }
+    }
+    
+    //Serial.println();
+  }else{
+    Serial.println("err");
+  }
+  delay(50);
+  return angle;
+}
+
+// Rotate to any desired angle
+void RotateToAngle(float setpoint){
+  float angle = 0;
+  float error = setpoint;
+  float PWM_L = 0;
+  float PWM_R = 0;
+  float Kp = 255/setpoint;
+  if (error < 0){
+    while (error <= -2){
+      PWM_L = error * Kp;
+      PWM_R = error * Kp;
+
+      ledcWrite(L_IN1, int(PWM_L)); // L Forward
+      ledcWrite(L_IN2, 0);          // L Backward == 0
+      ledcWrite(R_IN3, 0);          // R Forward == 0
+      ledcWrite(R_IN4, int(PWM_R)); // R Backward
+
+      angle += readGyro();
+      error = setpoint - angle;
+      //// Motor Controls
+    }
+    ledcWrite(L_IN1, 0);          // L Forward == 0
+    ledcWrite(L_IN2, 0);          // L Backward == 0
+    ledcWrite(R_IN3, 0);          // R Forward == 0
+    ledcWrite(R_IN4, 0);          // R Backward == 0
+  }
+  else{
+    while (error >= 2){
+      PWM_L = error * Kp;
+      PWM_R = error * Kp;
+      
+      ledcWrite(L_IN1, 0);          // L Forward == 0
+      ledcWrite(L_IN2, int(PWM_L)); // L Backward 
+      ledcWrite(R_IN3, int(PWM_R)); // R Forward
+      ledcWrite(R_IN4, 0);          // R Backward == 0
+
+      angle += readGyro();
+      error = setpoint - angle;
+    }
+    ledcWrite(L_IN1, 0);          // L Forward == 0
+    ledcWrite(L_IN2, 0);          // L Backward == 0
+    ledcWrite(R_IN3, 0);          // R Forward == 0
+    ledcWrite(R_IN4, 0);          // R Backward == 0
+  }
 }
 
 // ** Forward Movement **
@@ -80,15 +205,11 @@ void Forward() {
   ledcWrite(R_IN4, 0);
 }
 
-// ** Rotate Search **
 void RotateSearch() {
-  // Rotate logic to search for object
-  ledcWrite(L_IN1, MAX_SPEED);
-  ledcWrite(L_IN2, 0);
-  ledcWrite(R_IN3, 0);
-  ledcWrite(R_IN4, MAX_SPEED);
-  delay(1000);  // Adjust delay for rotation
-  StopMotors();
+    if (objectDetectedLock) return; // Exit if locked by object detection
+
+    RotateToAngle(25);
+    delay(2500);
 }
 
 // ** Stop Motors **
