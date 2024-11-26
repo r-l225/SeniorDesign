@@ -156,46 +156,13 @@ void handleBoundary(uint8_t sensorState) {
 
 
 void Forward() {
-  const float maxPWM = 255;    
-  const float setpoint = 0;    
-  float angle = 0;             
-  float error = 0;             
-  float PWM_L = maxPWM;        
-  float PWM_R = maxPWM;        
-  const float Kp = maxPWM / 180; // Proportional gain for error correction (adjust as needed)
-
-  // Start motors at full speed
-  ledcWrite(L_IN1, maxPWM); // Left motor forward
-  ledcWrite(L_IN2, 0);      // Left motor backward
-  ledcWrite(R_IN3, maxPWM); // Right motor forward
-  ledcWrite(R_IN4, 0);      // Right motor backward
-
-  while (true) {
-    // Read gyroscope and update angle (integrate angular velocity over time)
-    float gyroRate = readGyro(); // Replace with actual gyro function
-    angle += gyroRate * 0.01;    // Assume 10ms loop time (adjust based on actual timing)
-
-    // Calculate error (setpoint - current angle)
-    error = setpoint - angle;
-
-    // Proportional correction based on error
-    PWM_L = maxPWM - (Kp * error); // Reduce left motor speed if drifting right
-    PWM_R = maxPWM + (Kp * error); // Reduce right motor speed if drifting left
-
-    // Constrain PWM values to avoid exceeding limits
-    PWM_L = constrain(PWM_L, 0, maxPWM);
-    PWM_R = constrain(PWM_R, 0, maxPWM);
-
-    // Apply corrected PWM values
-    ledcWrite(L_IN1, int(PWM_L)); // Adjust left motor speed
-    ledcWrite(L_IN2, 0);
-    ledcWrite(R_IN3, int(PWM_R)); // Adjust right motor speed
-    ledcWrite(R_IN4, 0);
-
-    // Small delay to match integration time
-    delay(10); // 10ms loop (adjust based on your system)
-  }
+  int speed = 255; 
+  ledcWrite(L_IN1, speed);
+  ledcWrite(L_IN2, 0);
+  ledcWrite(R_IN3, speed);
+  ledcWrite(R_IN4, 0);
 }
+
 
 void TurnRight() {
   int speed = 150; 
@@ -233,92 +200,94 @@ void StopMotors() {
   ledcWrite(R_IN4, 0);
 }
 
-float readGyro() {
-  static float angle = 0;       // Cumulative angle
-  const float gyroScale = 0.6;  // Scaling factor (adjust based on calibration)
-  const float offset = 11.85;   // Offset (adjust based on calibration)
-  const float deadZone = 0.15;  // Dead zone threshold
-  const float dt = 0.05;        // Time interval (50 ms)
+// Read the Gyroscope
+float readGyro(){
+  float angle = 0;
+  int rslt;
+  int trash;
+  float Yaw = 0;
+  ////only read gyro data from bmi160
+  int16_t accelGyro[6]={0}; 
+  //get both accel and gyro data from bmi160
+  //parameter accelGyro is the pointer to store the data
+  rslt = bmi160.getAccelGyroData(accelGyro);
 
-  int16_t accelGyro[6] = {0};
-  int rslt = bmi160.getAccelGyroData(accelGyro);
-
-  if (rslt == 0) {
-    // Extract yaw rate from gyro data 
-    float rawYaw = accelGyro[2];
-    float Yaw = ((rawYaw + offset) / 128) * gyroScale;
-
-    // Apply dead zone to filter noise
-    if (Yaw > deadZone) {
-      angle += Yaw * dt; // Positive yaw rate
-    } else if (Yaw < -deadZone) {
-      angle += Yaw * dt; // Negative yaw rate
+  if(rslt == 0){
+    for(int i=0;i<6;i++){
+      if (i==2){
+        //the first three are gyro data
+        Yaw = (((accelGyro[i]+11.85)/128)*0.6);
+        if(Yaw > 0.15){
+          angle += Yaw;
+        }
+        else if(Yaw <= 0.15 and Yaw >=-0.15){
+          angle += 0;
+        }
+        else{
+          angle -= abs(Yaw);
+        }
+        //Serial.print(Yaw);Serial.print("\t"); Serial.print(Yaw/3.14); Serial.print("\t"); Serial.print(angle); Serial.print("\t");
+        //Serial.println(accelGyro[i]*3.14/180.0);
+      }
+      else{
+        //the following three data are accel data
+        trash = accelGyro[i];
+      }
     }
-    // No change if Yaw is within the dead zone
-  } else {
-    Serial.println("Error reading BMI160 data");
+    
+    //Serial.println();
+  }else{
+    Serial.println("err");
   }
-
+  delay(50);
   return angle;
 }
 
-void RotateToAngle(float setpoint) {
-    float angle = 0;              // Current cumulative angle
-    float error = setpoint;       // Initial error
-    float Kp = 1.0;               // Proportional gain (adjust experimentally)
-    float PWM_L = 0;              // Left motor PWM
-    float PWM_R = 0;              // Right motor PWM
-    const float deadZone = 1.0;   // Acceptable error threshold (degrees)
+// Rotate to any desired angle
+void RotateToAngle(float setpoint){
+  float angle = 0;
+  float error = setpoint;
+  float PWM_L = 0;
+  float PWM_R = 0;
+  float Kp = 255/setpoint;
+  if (error < 0){
+    while (error <= -2){
+      PWM_L = error * Kp;
+      PWM_R = error * Kp;
 
-    while (fabs(error) > deadZone) {
-        // Update current angle from gyroscope
-        angle += readGyro(); // Ensure readGyro() integrates angular velocity
+      ledcWrite(L_IN1, int(PWM_L)); // L Forward
+      ledcWrite(L_IN2, 0);          // L Backward == 0
+      ledcWrite(R_IN3, 0);          // R Forward == 0
+      ledcWrite(R_IN4, int(PWM_R)); // R Backward
 
-        // Calculate error
-        error = setpoint - angle;
-
-        // Proportional control for PWM
-        float correction = Kp * error;
-
-        // Constrain correction to valid PWM range
-        correction = constrain(correction, -255, 255);
-
-        // Set PWM values for rotation
-        if (correction > 0) {
-            PWM_L = correction;  // Left motor forward
-            PWM_R = -correction; // Right motor backward
-        } else {
-            PWM_L = correction;  // Left motor backward
-            PWM_R = -correction; // Right motor forward
-        }
-
-        // Apply PWM to motors
-        if (PWM_L > 0) {
-            ledcWrite(L_IN1, int(PWM_L));
-            ledcWrite(L_IN2, 0);
-        } else {
-            ledcWrite(L_IN1, 0);
-            ledcWrite(L_IN2, int(-PWM_L));
-        }
-
-        if (PWM_R > 0) {
-            ledcWrite(R_IN3, int(PWM_R));
-            ledcWrite(R_IN4, 0);
-        } else {
-            ledcWrite(R_IN3, 0);
-            ledcWrite(R_IN4, int(-PWM_R));
-        }
-
-        delay(10); // Small delay for stability
+      angle += readGyro();
+      error = setpoint - angle;
+      //// Motor Controls
     }
+    ledcWrite(L_IN1, 0);          // L Forward == 0
+    ledcWrite(L_IN2, 0);          // L Backward == 0
+    ledcWrite(R_IN3, 0);          // R Forward == 0
+    ledcWrite(R_IN4, 0);          // R Backward == 0
+  }
+  else{
+    while (error >= 2){
+      PWM_L = error * Kp;
+      PWM_R = error * Kp;
+      
+      ledcWrite(L_IN1, 0);          // L Forward == 0
+      ledcWrite(L_IN2, int(PWM_L)); // L Backward 
+      ledcWrite(R_IN3, int(PWM_R)); // R Forward
+      ledcWrite(R_IN4, 0);          // R Backward == 0
 
-    // Stop motors after reaching the target
-    ledcWrite(L_IN1, 0);
-    ledcWrite(L_IN2, 0);
-    ledcWrite(R_IN3, 0);
-    ledcWrite(R_IN4, 0);
+      angle += readGyro();
+      error = setpoint - angle;
+    }
+    ledcWrite(L_IN1, 0);          // L Forward == 0
+    ledcWrite(L_IN2, 0);          // L Backward == 0
+    ledcWrite(R_IN3, 0);          // R Forward == 0
+    ledcWrite(R_IN4, 0);          // R Backward == 0
+  }
 }
-
 // Function to read the IR sensors and return a binary/hex value
 uint8_t IR_Sensor_read() {
   int s1 = digitalRead(IRSensor1); // Front-Left
@@ -337,4 +306,6 @@ void IR_Sensor_setup() {
   pinMode(IRSensor3, INPUT);
   pinMode(IRSensor4, INPUT);
 }
+
+
 
