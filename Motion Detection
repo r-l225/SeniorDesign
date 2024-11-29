@@ -330,8 +330,7 @@ void RotateToBigAngle(float setpoint){
   }
 }
 
-// Incomplete function, need to keep bot moving staright forward.
-// (UNFINISHED)
+// Complete
 void StraightForward(){
   float maxPWM = 200;
   float setpoint = 0;
@@ -380,6 +379,67 @@ void StraightForward(){
       ledcWrite(L_IN2, 0);          // L Backward == 0
       ledcWrite(R_IN3, int(PWM_R));     // R Forward == maxPWM
       ledcWrite(R_IN4, 0);          // R Backward
+      
+      angle += readGyro();
+      error = setpoint + angle;
+      detectionDistance = readUltra();
+    }
+    angle += readGyro();
+    error = setpoint + angle;
+    detectionDistance = readUltra();
+  }
+  StopMotors();
+}
+
+void StraightBack(){
+  float maxPWM = 200;
+  float setpoint = 0;
+  float angle = 0;
+  float error = setpoint;
+  float PWM_L = 0;
+  float PWM_R = 0;
+  float Kp = maxPWM/10;
+  float detectionDistance = 0;
+  uint8_t endline = 0;
+  angle += readGyro();
+  error = setpoint + angle;
+  detectionDistance = readUltra();
+  endline = readIR();
+  while (detectionDistance > 10 | endline != 3){
+    if (error > 1){
+      PWM_L = maxPWM - abs(error * Kp);
+      PWM_R = maxPWM - abs(error * Kp);
+
+      ledcWrite(L_IN1, 0);     // L Forward == maxPWM
+      ledcWrite(L_IN2, int(PWM_L));          // L Backward == 0
+      ledcWrite(R_IN3, 0); // R Forward == maxPWM - error Correction
+      ledcWrite(R_IN4, maxPWM);          // R Backward == 0
+
+      angle += readGyro();
+      error = setpoint + angle;
+      detectionDistance = readUltra();
+    }
+    else if (error < -1){
+      PWM_L = maxPWM - abs(error * Kp);
+      PWM_R = maxPWM - abs(error * Kp);
+
+      ledcWrite(L_IN1, 0);                   // L Forward == maxPWM - error Correction
+      ledcWrite(L_IN2, maxPWM);              // L Backward == 0
+      ledcWrite(R_IN3, 0);                   // R Forward == maxPWM
+      ledcWrite(R_IN4, int(PWM_R));          // R Backward
+      
+      angle += readGyro();
+      error = setpoint + angle;
+      detectionDistance = readUltra();
+    }
+    else{
+      PWM_L = maxPWM - abs(error * Kp);
+      PWM_R = maxPWM - abs(error * Kp);
+      
+      ledcWrite(L_IN1, 0);                   // L Forward == maxPWM - error Correction
+      ledcWrite(L_IN2, int(PWM_L));          // L Backward == 0
+      ledcWrite(R_IN3, 0);                   // R Forward == maxPWM
+      ledcWrite(R_IN4, int(PWM_R));          // R Backward
       
       angle += readGyro();
       error = setpoint + angle;
