@@ -57,11 +57,8 @@ float ultra_Sensor_read();
 void TaskSensors(void *pvParameters);
 void TaskNavigation(void *pvParameters);
 void StopMotors();
-void RotateInPlace();
 void Forward();
 void Reverse();
-void turnLeft();
-void turnRight();
 void changeState();
 void RotateSearch();
 
@@ -109,12 +106,22 @@ void loop() {
 void TaskSensors(void *pvParameters) {
   for (;;) {
     uint8_t newBoundaryCode = IR_Sensor_read();
+    float distance = ultra_Sensor_read();
 
     xSemaphoreTake(stateMutex, portMAX_DELAY);
     boundaryCode = newBoundaryCode;
+
+    // Determine if opponent is detected based on distance
+    if (distance > 0 && distance <= detectionThreshold) {
+      opponentDetected = true;  // Opponent detected
+    } else {
+      opponentDetected = false; // No opponent detected
+    }
     xSemaphoreGive(stateMutex);
 
-    vTaskDelay(100 / portTICK_PERIOD_MS);
+    changeState();
+
+    vTaskDelay(5 / portTICK_PERIOD_MS);
   }
 }
 
@@ -125,34 +132,24 @@ void TaskSensors(void *pvParameters) {
 void TaskNavigation(void *pvParameters) {
   for (;;) {
 
-    float distance = ultra_Sensor_read();
-    if (distance > detectionThreshold || distance <= 0) {
-      opponentDetected = false;
-      currentState = SEARCHING;
-      boundaryCode = 0xF;
-    } else {
-      opponentDetected = true;
-    }
-
-    changeState();
-    State localState;
-
-    // Lock only to read the currentState
-    xSemaphoreTake(stateMutex, portMAX_DELAY);
-    localState = currentState;
-    xSemaphoreGive(stateMutex);
-
-    switch (localState) {
+    switch (currentState) {
       case SEARCHING:
       digitalWrite(R_LED, LOW);
+      digitalWrite(G_LED, HIGH);
+      digitalWrite(B_LED, LOW);
+        StopMotors();
         RotateSearch();
         break;
       case MOVING_FORWARD:
       digitalWrite(R_LED, HIGH);
+      digitalWrite(G_LED, LOW);
+      digitalWrite(B_LED, LOW);
         Forward();
         break;
       case AVOID:
       digitalWrite(R_LED, LOW);
+      digitalWrite(G_LED, LOW);
+      digitalWrite(B_LED, HIGH);
         handleBoundaryMovement();
         break;
       case STOPPED:
@@ -161,19 +158,20 @@ void TaskNavigation(void *pvParameters) {
         break;
     }
 
-    vTaskDelay(100 / portTICK_PERIOD_MS);
+    vTaskDelay(200 / portTICK_PERIOD_MS);
   }
 }
 
 // Handle state changes based on sensor input
 void changeState() {
+  static State lastState = STOPPED;
+
   if (boundaryCode != 0xF) {
     currentState = AVOID;
   } else if (opponentDetected) {
     currentState = MOVING_FORWARD;
   } else {
     currentState = SEARCHING;
-    opponentDetected = false;
   }
 }
 
@@ -247,12 +245,12 @@ uint8_t IR_Sensor_read() {
   return boundaryCode;
 }
 
-
 void ultra_Sensor_setup() {
   pinMode(trigPin, OUTPUT);
   pinMode(echoPin, INPUT);
 }
 
+// Enhanced Ultrasonic Sensor Read
 float ultra_Sensor_read() {
   digitalWrite(trigPin, LOW);
   delayMicroseconds(2);
@@ -260,11 +258,15 @@ float ultra_Sensor_read() {
   delayMicroseconds(10);
   digitalWrite(trigPin, LOW);
 
-  long duration = pulseIn(echoPin, HIGH);
-  return (duration * 0.034) / 2;
+  long duration = pulseIn(echoPin, HIGH, 30000); // Timeout at 30ms
+  if (duration == 0) {
+    return -1;  // No signal detected
+  }
+  
+  float distance = (duration * 0.034) / 2;  // Convert to cm
+  filteredDistance = updateUltraAverage(distance);
+  return filteredDistance;
 }
-
-
 
 // Read the Gyroscope
 float readGyro(){
@@ -308,7 +310,6 @@ float readGyro(){
   delay(50);
   return angle;
 }
-
 
 // Rotate to any desired angle less than 90 degrees
 void RotateToSmallAngle(float setpoint){
@@ -406,53 +407,16 @@ void RotateToBigAngle(float setpoint){
 }
 
 void RotateSearch(){
-  RotateToSmallAngle(10);
+  RotateToSmallAngle(20);
   delay(1200);
 }
 
 void Forward() {
-  int speed = 200; 
+  int speed = 180; 
   ledcWrite(L_IN1, speed);
   ledcWrite(L_IN2, 0);
   ledcWrite(R_IN3, speed);
   ledcWrite(R_IN4, 0);
-}
-
-void RotateInPlace() {   
-    int speed = 80;
-    ledcWrite(L_IN1, speed);  
-    ledcWrite(L_IN2, 0);    
-    ledcWrite(R_IN3, 0);  
-    ledcWrite(R_IN4, speed); 
-}
-
-void sharpRight() {
-  int speed = 150; 
-  Serial.println("Sharp Right Turn.");
-  ledcWrite(L_IN1, speed);
-  ledcWrite(L_IN2, 0);
-  ledcWrite(R_IN3, 0);  
-  ledcWrite(R_IN4, 0);
-  delay(100);
-}
-
-void sharpLeft() {
-  int speed = 150; 
-  Serial.println("Sharp Left Turn.");
-  ledcWrite(L_IN1, 0);  
-  ledcWrite(L_IN2, 0);
-  ledcWrite(R_IN3, speed);  
-  ledcWrite(R_IN4, 0);
-  delay(100);
-}
-
-void Reverse() {
-    int speed = 200; 
-    ledcWrite(L_IN1, 0);             
-    ledcWrite(L_IN2, speed);            
-    ledcWrite(R_IN3, 0);             
-    ledcWrite(R_IN4, speed);            
-    delay(800);
 }
 
 void StopMotors() {
@@ -517,3 +481,4 @@ void StraightBack(){
   }
   StopMotors();
 }
+
