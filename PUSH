@@ -6,6 +6,10 @@
 
 SemaphoreHandle_t stateMutex;
 
+const int R_LED = 12;
+const int G_LED = 14;
+const int B_LED = 27;
+
 // IR Sensor Pins 
 int IRSensor1 = 36;
 int IRSensor2 = 39;
@@ -21,8 +25,8 @@ const int8_t i2c_addr = 0x69;
 
 
 // Motor Control Pins
-const int L_IN1 = 2;   // Control pin 1 for left motor
-const int L_IN2 = 0;   // Control pin 2 for left motor
+const int L_IN1 = 18;   // Control pin 1 for left motor
+const int L_IN2 = 19;   // Control pin 2 for left motor
 const int R_IN3 = 4;   // Control pin 1 for right motor
 const int R_IN4 = 16;  // Control pin 2 for right motor
 
@@ -33,7 +37,7 @@ const int MAX_SPEED = 255;      // Maximum PWM duty cycle
 
 
 // Thresholds
-const int detectionThreshold = 80;
+const int detectionThreshold = 70;
 
 // State Machine
 enum State { SEARCHING, MOVING_FORWARD, AVOID, STOPPED };
@@ -69,6 +73,10 @@ void setup() {
   ultra_Sensor_setup();
 
   stateMutex = xSemaphoreCreateMutex();
+
+  pinMode(R_LED, OUTPUT);
+  pinMode(G_LED, OUTPUT);
+  pinMode(B_LED, OUTPUT);
 
   // Motor pin setup
   ledcAttach(L_IN1,  PWMFreq, PWMResolution);
@@ -106,24 +114,27 @@ void TaskSensors(void *pvParameters) {
     boundaryCode = newBoundaryCode;
     xSemaphoreGive(stateMutex);
 
-
-    changeState();
     vTaskDelay(100 / portTICK_PERIOD_MS);
   }
 }
 
 
+
+
 // Core 0: Navigation and motor control
 void TaskNavigation(void *pvParameters) {
   for (;;) {
-    
+
     float distance = ultra_Sensor_read();
-    bool detected = (distance < detectionThreshold); // Local variable
-    opponentDetected = detected;
+    if (distance > detectionThreshold || distance <= 0) {
+      opponentDetected = false;
+      currentState = SEARCHING;
+      boundaryCode = 0xF;
+    } else {
+      opponentDetected = true;
+    }
 
     changeState();
-
-
     State localState;
 
     // Lock only to read the currentState
@@ -133,15 +144,19 @@ void TaskNavigation(void *pvParameters) {
 
     switch (localState) {
       case SEARCHING:
+      digitalWrite(R_LED, LOW);
         RotateSearch();
         break;
       case MOVING_FORWARD:
+      digitalWrite(R_LED, HIGH);
         Forward();
         break;
       case AVOID:
+      digitalWrite(R_LED, LOW);
         handleBoundaryMovement();
         break;
       case STOPPED:
+      digitalWrite(R_LED, LOW);
         StopMotors();
         break;
     }
@@ -152,26 +167,13 @@ void TaskNavigation(void *pvParameters) {
 
 // Handle state changes based on sensor input
 void changeState() {
-  State newState = currentState;  // Assume current state unless conditions dictate otherwise.
-
   if (boundaryCode != 0xF) {
-    newState = AVOID;
+    currentState = AVOID;
   } else if (opponentDetected) {
-    newState = MOVING_FORWARD;
+    currentState = MOVING_FORWARD;
   } else {
-    newState = SEARCHING;
-  }
-
-  // Change state only if it's different.
-  if (newState != currentState) {
-    currentState = newState;
-    Serial.print("State changed to: ");
-    switch (currentState) {
-      case SEARCHING: Serial.println("SEARCHING."); break;
-      case MOVING_FORWARD: Serial.println("MOVING FORWARD."); break;
-      case AVOID: Serial.println("AVOID."); break;
-      case STOPPED: Serial.println("STOPPED."); break;
-    }
+    currentState = SEARCHING;
+    opponentDetected = false;
   }
 }
 
@@ -187,29 +189,29 @@ void handleBoundaryMovement() {
       break;
     case 0xD:
       Reverse();
-      RotateToAngle(-90);
-      Serial.println("D");
+      RotateToBigAngle(120);
+      Serial.println("D-front-right");
       break;
       case 0xE:
       Reverse();
-      RotateToAngle(90);
-      Serial.println("E");
+      RotateToBigAngle(-120);
+      Serial.println("E-front-left");
       break;
     case 0x3:
       Forward();
       Serial.println("3");
       break;
     case 0xC:
-      Reverse();
-      RotateToAngle(90);
-      Serial.println("C");
+      StraightBack();
+      RotateToBigAngle(180);
+      Serial.println("C-2front");
       break;
     case 0x5:
-      RotateToAngle(-90);
+      RotateToBigAngle(180);
       Serial.println("5");
       break;
     case 0xA:
-     RotateToAngle(90);
+     RotateToBigAngle(180);
       Serial.println("A");
       break;
     default:
@@ -263,6 +265,7 @@ float ultra_Sensor_read() {
 }
 
 
+
 // Read the Gyroscope
 float readGyro(){
   float angle = 0;
@@ -306,13 +309,14 @@ float readGyro(){
   return angle;
 }
 
-// Rotate to any desired angle
-void RotateToAngle(float setpoint){
+
+// Rotate to any desired angle less than 90 degrees
+void RotateToSmallAngle(float setpoint){
   float angle = 0;
   float error = setpoint;
   float PWM_L = 0;
   float PWM_R = 0;
-  float Kp = 255/setpoint;
+  float Kp = 180/setpoint;
   if (error < 0){
     while (error <= -2){
       PWM_L = error * Kp;
@@ -322,15 +326,12 @@ void RotateToAngle(float setpoint){
       ledcWrite(L_IN2, 0);          // L Backward == 0
       ledcWrite(R_IN3, 0);          // R Forward == 0
       ledcWrite(R_IN4, int(PWM_R)); // R Backward
-
+      
       angle += readGyro();
       error = setpoint - angle;
       //// Motor Controls
     }
-    ledcWrite(L_IN1, 0);          // L Forward == 0
-    ledcWrite(L_IN2, 0);          // L Backward == 0
-    ledcWrite(R_IN3, 0);          // R Forward == 0
-    ledcWrite(R_IN4, 0);          // R Backward == 0
+    StopMotors();
   }
   else{
     while (error >= 2){
@@ -341,25 +342,76 @@ void RotateToAngle(float setpoint){
       ledcWrite(L_IN2, int(PWM_L)); // L Backward 
       ledcWrite(R_IN3, int(PWM_R)); // R Forward
       ledcWrite(R_IN4, 0);          // R Backward == 0
-
+      
       angle += readGyro();
       error = setpoint - angle;
     }
-    ledcWrite(L_IN1, 0);          // L Forward == 0
-    ledcWrite(L_IN2, 0);          // L Backward == 0
-    ledcWrite(R_IN3, 0);          // R Forward == 0
-    ledcWrite(R_IN4, 0);          // R Backward == 0
+    StopMotors();
+  }
+}
+
+// Rotate to any desired angle greater than 120 degrees
+void RotateToBigAngle(float setpoint){
+  float angle = 0;
+  float error = setpoint;
+  float PWM_L = 0;
+  float PWM_R = 0;
+  float Kp = 255/setpoint;
+  if (error < 0){
+    while (error <= -2){
+      PWM_L = error * Kp;
+      PWM_R = error * Kp;
+
+      if (PWM_L < 60){
+        ledcWrite(L_IN1, 60); // L Forward
+        ledcWrite(L_IN2, 0);          // L Backward == 0
+        ledcWrite(R_IN3, 0);          // R Forward == 0
+        ledcWrite(R_IN4, 60); // R Backward
+      }
+
+      else{
+        ledcWrite(L_IN1, int(PWM_L)); // L Forward
+        ledcWrite(L_IN2, 0);          // L Backward == 0
+        ledcWrite(R_IN3, 0);          // R Forward == 0
+        ledcWrite(R_IN4, int(PWM_R)); // R Backward
+      }
+      angle += readGyro();
+      error = setpoint - angle;
+      //// Motor Controls
+    }
+    StopMotors();
+  }
+  else{
+    while (error >= 2){
+      PWM_L = error * Kp;
+      PWM_R = error * Kp;
+      
+      if (PWM_L < 60){
+        ledcWrite(L_IN1, 0);          // L Forward == 0
+        ledcWrite(L_IN2, 60); // L Backward 
+        ledcWrite(R_IN3, 60); // R Forward
+        ledcWrite(R_IN4, 0);          // R Backward == 0
+      }
+      else{
+        ledcWrite(L_IN1, 0);          // L Forward == 0
+        ledcWrite(L_IN2, int(PWM_L)); // L Backward 
+        ledcWrite(R_IN3, int(PWM_R)); // R Forward
+        ledcWrite(R_IN4, 0);          // R Backward == 0
+      }
+      angle += readGyro();
+      error = setpoint - angle;
+    }
+    StopMotors();
   }
 }
 
 void RotateSearch(){
-  RotateToAngle(45);
-  delay(1000);
+  RotateToSmallAngle(10);
+  delay(1200);
 }
 
-
 void Forward() {
-  int speed = 255; 
+  int speed = 200; 
   ledcWrite(L_IN1, speed);
   ledcWrite(L_IN2, 0);
   ledcWrite(R_IN3, speed);
@@ -367,7 +419,7 @@ void Forward() {
 }
 
 void RotateInPlace() {   
-    int speed = 200;
+    int speed = 80;
     ledcWrite(L_IN1, speed);  
     ledcWrite(L_IN2, 0);    
     ledcWrite(R_IN3, 0);  
@@ -400,7 +452,7 @@ void Reverse() {
     ledcWrite(L_IN2, speed);            
     ledcWrite(R_IN3, 0);             
     ledcWrite(R_IN4, speed);            
-    delay(500);
+    delay(800);
 }
 
 void StopMotors() {
@@ -409,4 +461,59 @@ void StopMotors() {
 
   ledcWrite(R_IN3, 0);
   ledcWrite(R_IN4, 0);
+}
+
+void StraightBack(){
+  float maxPWM = 200;
+  float setpoint = 0;
+  float angle = 0;
+  float error = setpoint;
+  float PWM_L = 0;
+  float PWM_R = 0;
+  float Kp = maxPWM/10;
+
+  angle += readGyro();
+  error = setpoint + angle;
+  for (int temp = 0; temp < 9; temp++){
+
+    if (error > 1){
+      PWM_L = maxPWM - abs(error * Kp);
+      PWM_R = maxPWM - abs(error * Kp);
+
+      ledcWrite(L_IN1, 0);                   // L Forward == maxPWM - error Correction
+      ledcWrite(L_IN2, int(PWM_L));              // L Backward == 0
+      ledcWrite(R_IN3, 0);                   // R Forward == maxPWM
+      ledcWrite(R_IN4, maxPWM);          // R Backward
+
+      angle += readGyro();
+      error = setpoint + angle;
+    }
+    else if (error < -1){
+      PWM_L = maxPWM - abs(error * Kp);
+      PWM_R = maxPWM - abs(error * Kp);
+
+      ledcWrite(L_IN1, 0);     // L Forward == maxPWM
+      ledcWrite(L_IN2, maxPWM);          // L Backward == 0
+      ledcWrite(R_IN3, 0); // R Forward == maxPWM - error Correction
+      ledcWrite(R_IN4, int(PWM_R));          // R Backward == 0
+      
+      angle += readGyro();
+      error = setpoint + angle;
+    }
+    else{
+      PWM_L = maxPWM - abs(error * Kp);
+      PWM_R = maxPWM - abs(error * Kp);
+      
+      ledcWrite(L_IN1, 0);                   // L Forward == maxPWM - error Correction
+      ledcWrite(L_IN2, int(PWM_L));          // L Backward == 0
+      ledcWrite(R_IN3, 0);                   // R Forward == maxPWM
+      ledcWrite(R_IN4, int(PWM_R));          // R Backward
+      
+      angle += readGyro();
+      error = setpoint + angle;
+    }
+    angle += readGyro();
+    error = setpoint + angle;
+  }
+  StopMotors();
 }
