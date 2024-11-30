@@ -3,6 +3,11 @@
 // Rogelio Lucio
 // Samuel Winburn
 #include <DFRobot_BMI160.h>
+#define ULTRA_SAMPLES 5  // Number of samples for moving average
+float filteredDistance = 0;
+
+float ultraDistanceBuffer[ULTRA_SAMPLES] = {0};  // Buffer for ultrasonic readings
+int ultraIndex = 0;  // Current index in the buffer
 
 SemaphoreHandle_t stateMutex;
 
@@ -37,7 +42,7 @@ const int MAX_SPEED = 255;      // Maximum PWM duty cycle
 
 
 // Thresholds
-const int detectionThreshold = 70;
+const int detectionThreshold = 45;
 
 // State Machine
 enum State { SEARCHING, MOVING_FORWARD, AVOID, STOPPED };
@@ -58,7 +63,6 @@ void TaskSensors(void *pvParameters);
 void TaskNavigation(void *pvParameters);
 void StopMotors();
 void Forward();
-void Reverse();
 void changeState();
 void RotateSearch();
 
@@ -186,12 +190,12 @@ void handleBoundaryMovement() {
       Serial.println("B");
       break;
     case 0xD:
-      Reverse();
+      StraightBack();
       RotateToBigAngle(120);
       Serial.println("D-front-right");
       break;
       case 0xE:
-      Reverse();
+      StraightBack();
       RotateToBigAngle(-120);
       Serial.println("E-front-left");
       break;
@@ -482,3 +486,15 @@ void StraightBack(){
   StopMotors();
 }
 
+float updateUltraAverage(float newReading) {
+  // Replace the oldest value in the buffer
+  ultraDistanceBuffer[ultraIndex] = newReading;
+  ultraIndex = (ultraIndex + 1) % ULTRA_SAMPLES;
+
+  // Compute the average
+  float sum = 0;
+  for (int i = 0; i < ULTRA_SAMPLES; i++) {
+    sum += ultraDistanceBuffer[i];
+  }
+  return sum / ULTRA_SAMPLES;
+}
