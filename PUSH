@@ -14,6 +14,7 @@ SemaphoreHandle_t stateMutex;
 const int R_LED = 12;
 const int G_LED = 14;
 const int B_LED = 27;
+const int BUTTON_PIN = 13; // Button pin for starting
 
 // IR Sensor Pins 
 int IRSensor1 = 36;
@@ -42,11 +43,11 @@ const int MAX_SPEED = 255;      // Maximum PWM duty cycle
 
 
 // Thresholds
-const int detectionThreshold = 45;
+const int detectionThreshold = 55;
 
 // State Machine
-enum State { SEARCHING, MOVING_FORWARD, AVOID, STOPPED };
-volatile State currentState = SEARCHING;
+enum State { WAITING,SEARCHING, MOVING_FORWARD, AVOID, STOPPED };
+volatile State currentState = WAITING;
 
 volatile uint8_t boundaryCode = 0xF;
 volatile bool opponentDetected = false;
@@ -65,7 +66,7 @@ void StopMotors();
 void Forward();
 void changeState();
 void RotateSearch();
-
+void countdownStart();
 
 void setup() {
   Serial.begin(115200);
@@ -75,9 +76,16 @@ void setup() {
 
   stateMutex = xSemaphoreCreateMutex();
 
+  // Button and LED setup
+  pinMode(BUTTON_PIN, INPUT_PULLUP);
   pinMode(R_LED, OUTPUT);
   pinMode(G_LED, OUTPUT);
   pinMode(B_LED, OUTPUT);
+  digitalWrite(R_LED, LOW);
+  digitalWrite(G_LED, LOW);
+  digitalWrite(B_LED, LOW);
+
+  currentState = WAITING;
 
   // Motor pin setup
   ledcAttach(L_IN1,  PWMFreq, PWMResolution);
@@ -103,18 +111,70 @@ void setup() {
 }
 
 void loop() {
+  if (currentState == WAITING) {
+    int btn =digitalRead(BUTTON_PIN);
+    if (btn == LOW) {  // Button pressed
+      Serial.println("Button pressed");
+      countdownStart();  // Start the countdown
+      currentState = SEARCHING;  // Transition to SEARCHING state
+    } else {
+      digitalWrite(R_LED, HIGH);
+      digitalWrite(G_LED, LOW);
+      digitalWrite(B_LED, LOW);
+      delay(200);
+      digitalWrite(R_LED, LOW);
+      delay(200);
+    }
+  }
+}
+
+void countdownStart() {
+  for (int i = 5; i > 0; i--) {
+    // LED colors: Red -> Blue -> Green
+    if (i % 3 == 0) {
+      digitalWrite(R_LED, HIGH);  
+      digitalWrite(B_LED, LOW);
+      digitalWrite(G_LED, LOW);
+      Serial.println("Countdown: Red LED is ON");
+    } else if (i % 3 == 1) {
+      digitalWrite(R_LED, LOW);
+      digitalWrite(B_LED, HIGH);  
+      digitalWrite(G_LED, LOW);
+      Serial.println("Countdown: Blue LED is ON");
+    } else {
+      digitalWrite(R_LED, LOW);
+      digitalWrite(B_LED, LOW);
+      digitalWrite(G_LED, HIGH); 
+      Serial.println("Countdown: Green LED is ON");
+    }
+
+    Serial.print("Countdown: ");
+    Serial.println(i); 
+    delay(1000);       
+  }
+
+ 
+  digitalWrite(R_LED, LOW);
+  digitalWrite(G_LED, LOW);
+  digitalWrite(B_LED, LOW);
+
+  Serial.println("Countdown complete");
 }
 
 // Core 1: Sensor data collection and state management
 // In TaskSensors:
 void TaskSensors(void *pvParameters) {
   for (;;) {
+    if (currentState == WAITING) {
+      vTaskDelay(100 / portTICK_PERIOD_MS);  // Skip processing while waiting
+      continue;
+    }
+
     uint8_t newBoundaryCode = IR_Sensor_read();
     float distance = ultra_Sensor_read();
 
     xSemaphoreTake(stateMutex, portMAX_DELAY);
     boundaryCode = newBoundaryCode;
-
     // Determine if opponent is detected based on distance
     if (distance > 0 && distance <= detectionThreshold) {
       opponentDetected = true;  // Opponent detected
@@ -130,11 +190,14 @@ void TaskSensors(void *pvParameters) {
 }
 
 
-
-
 // Core 0: Navigation and motor control
 void TaskNavigation(void *pvParameters) {
   for (;;) {
+    if (currentState == WAITING) {
+      StopMotors();  // Ensure motors stay off while waiting
+      vTaskDelay(100 / portTICK_PERIOD_MS);
+      continue;
+    }
 
     switch (currentState) {
       case SEARCHING:
@@ -166,10 +229,10 @@ void TaskNavigation(void *pvParameters) {
   }
 }
 
+
 // Handle state changes based on sensor input
 void changeState() {
   static State lastState = STOPPED;
-
   if (boundaryCode != 0xF) {
     currentState = AVOID;
   } else if (opponentDetected) {
@@ -416,7 +479,7 @@ void RotateSearch(){
 }
 
 void Forward() {
-  int speed = 180; 
+  int speed = 200; 
   ledcWrite(L_IN1, speed);
   ledcWrite(L_IN2, 0);
   ledcWrite(R_IN3, speed);
