@@ -2,12 +2,9 @@
 // Nadia Al-Shewear
 // Rogelio Lucio
 // Samuel Winburn
-#include <DFRobot_BMI160.h>
-#define ULTRA_SAMPLES 5  // Number of samples for moving average
-float filteredDistance = 0;
 
-float ultraDistanceBuffer[ULTRA_SAMPLES] = {0};  // Buffer for ultrasonic readings
-int ultraIndex = 0;  // Current index in the buffer
+
+#include <DFRobot_BMI160.h>
 
 SemaphoreHandle_t stateMutex;
 
@@ -22,8 +19,8 @@ int IRSensor2 = 39;
 int IRSensor3 = 34;
 int IRSensor4 = 35;
 
-const int trigPin = 26; 
-const int echoPin = 25; 
+const int CenterTrigPin = 26; 
+const int CenterEchoPin = 25; 
 
 // Declarations for the BMI160
 DFRobot_BMI160 bmi160;
@@ -313,26 +310,30 @@ uint8_t IR_Sensor_read() {
 }
 
 void ultra_Sensor_setup() {
-  pinMode(trigPin, OUTPUT);
-  pinMode(echoPin, INPUT);
+  pinMode(CenterTrigPin, OUTPUT);
+  pinMode(CenterEchoPin, INPUT);
 }
 
 // Enhanced Ultrasonic Sensor Read
 float ultra_Sensor_read() {
-  digitalWrite(trigPin, LOW);
+  float SOUND_SPEED = 0.034;
+  long duration;
+  float distanceCm;
+  // Clears the TRIG_PIN
+  digitalWrite(CenterTrigPin, LOW);
   delayMicroseconds(2);
-  digitalWrite(trigPin, HIGH);
+  // Sets the TRIG_PIN on HIGH state for 10 micro seconds
+  digitalWrite(CenterTrigPin, HIGH);
   delayMicroseconds(10);
-  digitalWrite(trigPin, LOW);
-
-  long duration = pulseIn(echoPin, HIGH, 30000); // Timeout at 30ms
-  if (duration == 0) {
-    return -1;  // No signal detected
-  }
+  digitalWrite(CenterTrigPin, LOW);
   
-  float distance = (duration * 0.034) / 2;  // Convert to cm
-  filteredDistance = updateUltraAverage(distance);
-  return filteredDistance;
+  // Reads the ECHO_PIN, returns the sound wave travel time in microseconds
+  duration = pulseIn(CenterEchoPin, HIGH);
+  
+  // Calculate the distance
+  distanceCm = duration * SOUND_SPEED/2;
+  
+  return distanceCm;
 }
 
 // Read the Gyroscope
@@ -474,9 +475,14 @@ void RotateToBigAngle(float setpoint){
 }
 
 void RotateSearch(){
-  RotateToSmallAngle(20);
-  delay(1200);
+  // Rotate clockwise by driving left motor forward and right motor backward
+  ledcWrite(L_IN1, 160);  // Medium speed forward for left motor
+  ledcWrite(L_IN2, 0);    // Left motor IN2 off
+
+  ledcWrite(R_IN3, 0);    // Right motor IN3 off
+  ledcWrite(R_IN4, 160);  // Medium speed backward for right motor
 }
+
 
 void Forward() {
   int speed = 200; 
@@ -549,15 +555,3 @@ void StraightBack(){
   StopMotors();
 }
 
-float updateUltraAverage(float newReading) {
-  // Replace the oldest value in the buffer
-  ultraDistanceBuffer[ultraIndex] = newReading;
-  ultraIndex = (ultraIndex + 1) % ULTRA_SAMPLES;
-
-  // Compute the average
-  float sum = 0;
-  for (int i = 0; i < ULTRA_SAMPLES; i++) {
-    sum += ultraDistanceBuffer[i];
-  }
-  return sum / ULTRA_SAMPLES;
-}
