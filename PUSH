@@ -40,7 +40,7 @@ const int MAX_SPEED = 255;      // Maximum PWM duty cycle
 
 
 // Thresholds
-const int detectionThreshold = 55;
+const int detectionThreshold = 50;
 
 // State Machine
 enum State { WAITING,SEARCHING, MOVING_FORWARD, AVOID, STOPPED };
@@ -255,6 +255,7 @@ void handleBoundaryMovement() {
       Serial.println("D-front-right");
       break;
       case 0xE:
+      StopMotors();
       StraightBack();
       RotateToBigAngle(-120);
       Serial.println("E-front-left");
@@ -264,15 +265,18 @@ void handleBoundaryMovement() {
       Serial.println("3");
       break;
     case 0xC:
+    StopMotors();
       StraightBack();
       RotateToBigAngle(180);
       Serial.println("C-2front");
       break;
     case 0x5:
+      StopMotors();
       RotateToBigAngle(180);
       Serial.println("5");
       break;
     case 0xA:
+      StopMotors();
      RotateToBigAngle(180);
       Serial.println("A");
       break;
@@ -431,11 +435,11 @@ void RotateToBigAngle(float setpoint){
       PWM_L = error * Kp;
       PWM_R = error * Kp;
 
-      if (PWM_L < 60){
-        ledcWrite(L_IN1, 60); // L Forward
+      if (PWM_L < 75){
+        ledcWrite(L_IN1, 75); // L Forward
         ledcWrite(L_IN2, 0);          // L Backward == 0
         ledcWrite(R_IN3, 0);          // R Forward == 0
-        ledcWrite(R_IN4, 60); // R Backward
+        ledcWrite(R_IN4, 75); // R Backward
       }
 
       else{
@@ -455,10 +459,10 @@ void RotateToBigAngle(float setpoint){
       PWM_L = error * Kp;
       PWM_R = error * Kp;
       
-      if (PWM_L < 60){
+      if (PWM_L < 75){
         ledcWrite(L_IN1, 0);          // L Forward == 0
-        ledcWrite(L_IN2, 60); // L Backward 
-        ledcWrite(R_IN3, 60); // R Forward
+        ledcWrite(L_IN2, 75); // L Backward 
+        ledcWrite(R_IN3, 75); // R Forward
         ledcWrite(R_IN4, 0);          // R Backward == 0
       }
       else{
@@ -476,16 +480,16 @@ void RotateToBigAngle(float setpoint){
 
 void RotateSearch(){
   // Rotate clockwise by driving left motor forward and right motor backward
-  ledcWrite(L_IN1, 160);  // Medium speed forward for left motor
+  ledcWrite(L_IN1, 100);  // Medium speed forward for left motor
   ledcWrite(L_IN2, 0);    // Left motor IN2 off
 
   ledcWrite(R_IN3, 0);    // Right motor IN3 off
-  ledcWrite(R_IN4, 160);  // Medium speed backward for right motor
+  ledcWrite(R_IN4, 100);  // Medium speed backward for right motor
 }
 
 
 void Forward() {
-  int speed = 200; 
+  int speed = 130; 
   ledcWrite(L_IN1, speed);
   ledcWrite(L_IN2, 0);
   ledcWrite(R_IN3, speed);
@@ -501,7 +505,7 @@ void StopMotors() {
 }
 
 void StraightBack(){
-  float maxPWM = 200;
+  float maxPWM = 160;
   float setpoint = 0;
   float angle = 0;
   float error = setpoint;
@@ -554,4 +558,3 @@ void StraightBack(){
   }
   StopMotors();
 }
-
