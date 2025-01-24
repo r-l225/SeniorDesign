@@ -41,7 +41,7 @@ enum class RobotState {
 volatile RobotState currentState = RobotState::WAITING;
 
 // ================= Gyro Calibration =================
-float currentHeading = 0.0f;
+float deltaAngle = 0.0f;
 float x_comp = 0.0f;
 float y_comp = 0.0f;
 static float gyroOffset = 0.0f;
@@ -205,13 +205,6 @@ void TaskSensors(void *pvParameters) {
         float deltaAngle = readGyro();
         uint8_t boundary = readIR();
         float forwardAccel = readAccel(); 
-
-        // Update shared state safely
-        xSemaphoreTake(stateMutex, portMAX_DELAY);
-        currentHeading += deltaAngle;
-        if (currentHeading > 180) currentHeading -= 360;
-        if (currentHeading < -180) currentHeading += 360;
-         xSemaphoreGive(stateMutex);
          
         if (boundary == 0) {
             changeState(RobotState::STOPPED);
@@ -255,12 +248,10 @@ void TaskNavigation(void *pvParameters) {
 
   for (;;) {
     RobotState localState;
-    float localHeading;
 
     // Copy shared data
     xSemaphoreTake(stateMutex, portMAX_DELAY);
     localState   = currentState;
-    localHeading = currentHeading;
     xSemaphoreGive(stateMutex);
 
     switch (localState) {
@@ -363,45 +354,51 @@ float readAccel() {
 
 
 void StraightForward(){
-  // ====== 1) Basic Setup ======
-  float maxPWM   = 200.0f;  // Maximum motor speed
-  float setpoint = 0.0f;    // Desired heading (0 deg)
-  static float angle  = 0.0f; // Keep track of integrated angle across calls
-  float Kp       = 0.1f;   // Proportional gain (tune this)
-  
-  // Read current gyro "delta" or small angle increment
-  float delta = readGyro();  
-  // Accumulate into a running heading: angle
-  angle += delta;
+  float maxPWM = 200;
+  float setpoint = 0;
+  float angle = deltaAngle;
+  float error = setpoint;
+  float PWM_L = 0;
+  float PWM_R = 0;
+  float Kp = maxPWM/10;
+  float detectionDistance = 0;
+  uint8_t endline = 0;
+  //angle += readGyro();
+  error = setpoint + angle;
 
-  // Compute error = (currentHeading - desiredHeading)
-  float error = angle - setpoint;  // If angle>0 => turned left
-  
-  // ====== 2) Form a Correction ======
-  float correction = Kp * error;
-  
-  // We'll define "base speed" as something near maxPWM
-  float baseSpeed = maxPWM;  
-  // left motor = baseSpeed - correction
-  // right motor = baseSpeed + correction
-  float PWM_L = baseSpeed + correction;
-  float PWM_R = baseSpeed - correction;
+    if (error > 0){
+      PWM_L = maxPWM - abs(error * Kp);
+      PWM_R = maxPWM - abs(error * Kp);
 
-  // ====== 3) Constrain Speeds ======
-  // so we don't go negative or above max
-  if (PWM_L < 0)      PWM_L = 0;
-  if (PWM_L > maxPWM) PWM_L = maxPWM;
-  if (PWM_R < 0)      PWM_R = 0;
-  if (PWM_R > maxPWM) PWM_R = maxPWM;
+      ledcWrite(L_IN1, maxPWM);     // L Forward == maxPWM
+      ledcWrite(L_IN2, 0);          // L Backward == 0
+      ledcWrite(R_IN3, int(PWM_R)); // R Forward == maxPWM - error Correction
+      ledcWrite(R_IN4, 0);          // R Backward == 0
 
-  // ====== 4) Write to Motors ======
-  // L_IN1 = left forward, L_IN2 = left off
-  ledcWrite(L_IN1, (int)PWM_L);
-  ledcWrite(L_IN2, 0);
-  
-  // R_IN3 = right forward, R_IN4 = right off
-  ledcWrite(R_IN3, (int)PWM_R);
-  ledcWrite(R_IN4, 0);
+    }
+    else if (error < 0){
+      PWM_L = maxPWM - abs(error * Kp);
+      PWM_R = maxPWM - abs(error * Kp);
+
+      ledcWrite(L_IN1, int(PWM_L)); // L Forward == maxPWM - error Correction
+      ledcWrite(L_IN2, 0);          // L Backward == 0
+      ledcWrite(R_IN3, maxPWM);     // R Forward == maxPWM
+      ledcWrite(R_IN4, 0);          // R Backward
+    }
+
+    else{
+      PWM_L = maxPWM - abs(error * Kp);
+      PWM_R = maxPWM - abs(error * Kp);
+      
+      ledcWrite(L_IN1, int(PWM_L)); // L Forward == maxPWM - error Correction
+      ledcWrite(L_IN2, 0);          // L Backward == 0
+      ledcWrite(R_IN3, int(PWM_R));     // R Forward == maxPWM
+      ledcWrite(R_IN4, 0);          // R Backward
+    }
+
+    angle += readGyro();
+    error = setpoint + angle;
+
 }
 
 // ============ StopMotors() ============
@@ -419,4 +416,3 @@ uint8_t readIR() {
   int statusFR = digitalRead(FrontRightSensor);
   // If both sensors triggered => 3, etc.
   return (statusFL << 1) | statusFR; 
-}
