@@ -265,6 +265,7 @@ void TaskNavigation(void *pvParameters) {
         digitalWrite(B_LED, LOW);
 
         // Correct heading in real-time
+        float deltaAngle += readGyro(deltaAngle);
         StraightForward();
         break;
 
