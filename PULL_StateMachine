@@ -394,3 +394,4 @@ uint8_t readIR() {
   int statusFR = digitalRead(FrontRightSensor);
   // If both sensors triggered => 3, etc.
   return (statusFL << 1) | statusFR; 
+}
