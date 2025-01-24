@@ -202,7 +202,7 @@ void TaskSensors(void *pvParameters) {
         }
 
         // 1) Read sensor data
-        float deltaAngle = readGyro();
+        float deltaAngle = readGyro(deltaAngle);
         uint8_t boundary = readIR();
         float forwardAccel = readAccel(); 
          
@@ -281,8 +281,7 @@ void TaskNavigation(void *pvParameters) {
 }
 
 // Read the Gyroscope
-float readGyro(){
-  float angle = 0;
+float readGyro(float angle){
   int rslt;
   int trash;
   float Yaw = 0;
@@ -306,15 +305,13 @@ float readGyro(){
         else{
           angle -= abs(Yaw);
         }
-        //Serial.print(Yaw);Serial.print("\t"); Serial.print(Yaw/3.14); Serial.print("\t"); Serial.print(angle); Serial.print("\t");
-        //Serial.println(accelGyro[i]*3.14/180.0);
       }
       else{
+        // the first two (pitch and roll) are irrelevant for our angle.
         //the following three data are accel data
         trash = accelGyro[i];
       }
     }
-    
     //Serial.println();
   }else{
     Serial.println("err");
@@ -322,6 +319,7 @@ float readGyro(){
   delay(50);
   return angle;
 }
+
 
 float readAccel() {
     int16_t accelGyro[6] = {0};
@@ -352,22 +350,17 @@ float readAccel() {
     return y_comp; // Return forward-backward component
 }
 
-
 void StraightForward(){
   float maxPWM = 200;
-  float setpoint = 0;
+  float setpoint = 0.0f;
   float angle = deltaAngle;
   float error = setpoint;
-  float PWM_L = 0;
-  float PWM_R = 0;
-  float Kp = maxPWM/10;
-  float detectionDistance = 0;
-  uint8_t endline = 0;
-  //angle += readGyro();
+  float PWM_L = 0.0f;
+  float PWM_R = 0.0f;
+  float Kp = 10;
   error = setpoint + angle;
 
-    if (error > 0){
-      PWM_L = maxPWM - abs(error * Kp);
+    if (error >= 0){
       PWM_R = maxPWM - abs(error * Kp);
 
       ledcWrite(L_IN1, maxPWM);     // L Forward == maxPWM
@@ -376,29 +369,14 @@ void StraightForward(){
       ledcWrite(R_IN4, 0);          // R Backward == 0
 
     }
-    else if (error < 0){
+    else(error < 0){
       PWM_L = maxPWM - abs(error * Kp);
-      PWM_R = maxPWM - abs(error * Kp);
 
       ledcWrite(L_IN1, int(PWM_L)); // L Forward == maxPWM - error Correction
       ledcWrite(L_IN2, 0);          // L Backward == 0
       ledcWrite(R_IN3, maxPWM);     // R Forward == maxPWM
       ledcWrite(R_IN4, 0);          // R Backward
     }
-
-    else{
-      PWM_L = maxPWM - abs(error * Kp);
-      PWM_R = maxPWM - abs(error * Kp);
-      
-      ledcWrite(L_IN1, int(PWM_L)); // L Forward == maxPWM - error Correction
-      ledcWrite(L_IN2, 0);          // L Backward == 0
-      ledcWrite(R_IN3, int(PWM_R));     // R Forward == maxPWM
-      ledcWrite(R_IN4, 0);          // R Backward
-    }
-
-    angle += readGyro();
-    error = setpoint + angle;
-
 }
 
 // ============ StopMotors() ============
