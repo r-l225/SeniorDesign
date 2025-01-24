@@ -369,7 +369,7 @@ void StraightForward(){
       ledcWrite(R_IN4, 0);          // R Backward == 0
 
     }
-    else(error < 0){
+    else{
       PWM_L = maxPWM - abs(error * Kp);
 
       ledcWrite(L_IN1, int(PWM_L)); // L Forward == maxPWM - error Correction
