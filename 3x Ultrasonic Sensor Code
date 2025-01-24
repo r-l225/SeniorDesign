@@ -1,53 +1,41 @@
 // Samuel Winburn
-// Arduino Uno/ESP32-WROOM-32 Code
+// Arduino Uno/ESP32-WROOm-32 Code
 
 // Tested and calibrated on the Uno at 115200 Baud
 // Pins need to be configured for WROOM (already been decided, just need to import here!)
 
-
-// Uno Pins
-
-const int RightTrigPin = 10; //Looking to the left
-const int RightEchoPin = 11; //Looking to the left
-
-const int CenterTrigPin = 6;
-const int CenterEchoPin = 7;
-
-const int LeftTrigPin = 2; 
-const int LeftEchoPin = 3; 
-
-
 // ESP32 Pins
-/*
-const int RightTrigPin = XX; 
-const int RightEchoPin = XX; 
+
+const int RightTrigPin = 5; 
+const int RightEchoPin = 17; 
 
 const int CenterTrigPin = 26; 
 const int CenterEchoPin = 25;
 
-const int LeftTrigPin = XX; 
-const int LeftEchoPin = XX; 
-*/
+const int LeftTrigPin = 19; 
+const int LeftEchoPin = 18; 
+
 
 void setup()
 {
   Serial.begin(115200); // Init Serial at 115200 Baud
   ultra_Sensor_setup();
+
 }
 
 void loop()
 {
   float ultrasensorDistance1 = ultra_Sensor_read(RightTrigPin, RightEchoPin);
   Serial.println(ultrasensorDistance1);
-  delay(100);
+  delay(250);
 
   float ultrasensorDistance2 = ultra_Sensor_read(CenterTrigPin, CenterEchoPin);
   Serial.println(ultrasensorDistance2);
-  delay(100);
+  delay(250);
 
   float ultrasensorDistance3 = ultra_Sensor_read(LeftTrigPin, LeftEchoPin);
   Serial.println(ultrasensorDistance3);
-  delay(100);
+  delay(250);
 }
 
 
@@ -69,15 +57,13 @@ float ultra_Sensor_read(byte TRIG_PIN, byte ECHO_PIN){
   float distanceCm;
   // Clears the TRIG_PIN
   digitalWrite(TRIG_PIN, LOW);
-  delayMicroseconds(2);
+  delayMicroseconds(5);
   // Sets the TRIG_PIN on HIGH state for 10 micro seconds
   digitalWrite(TRIG_PIN, HIGH);
   delayMicroseconds(10);
   digitalWrite(TRIG_PIN, LOW);
-  
   // Reads the ECHO_PIN, returns the sound wave travel time in microseconds
   duration = pulseIn(ECHO_PIN, HIGH);
-  
   // Calculate the distance
   distanceCm = duration * SOUND_SPEED/2;
   
