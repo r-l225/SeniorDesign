@@ -200,13 +200,15 @@ void TaskSensors(void *pvParameters) {
             vTaskDelay(100 / portTICK_PERIOD_MS);
             continue;
         }
-
-        // 1) Read sensor data
-        float deltaAngle += readGyro(deltaAngle);
+        // 1) Read sensor data 
+        xSemaphoreTake(stateMutex, portMAX_DELAY);
+        deltaAngle = readGyro(deltaAngle);
+        xSemaphoreGive(stateMutex);
+        //deltaAngle = readGyro(deltaAngle);
         uint8_t boundary = readIR();
         float forwardAccel = readAccel(); 
          
-        if (boundary == 0) {
+        if (boundary == 3) {
             changeState(RobotState::STOPPED);
         } 
 
@@ -244,8 +246,6 @@ void TaskNavigation(void *pvParameters) {
   Serial.print("TaskNavigation running on core ");
   Serial.println(xPortGetCoreID());
 
-  float targetHeading = 0.0f;  // heading to hold
-
   for (;;) {
     RobotState localState;
 
@@ -265,8 +265,13 @@ void TaskNavigation(void *pvParameters) {
         digitalWrite(B_LED, LOW);
 
         // Correct heading in real-time
-        float deltaAngle += readGyro(deltaAngle);
+        //deltaAngle += readGyro(deltaAngle);
         StraightForward();
+        
+        digitalWrite(R_LED, LOW);
+        digitalWrite(G_LED, LOW);
+        digitalWrite(B_LED, LOW);
+
         break;
 
       case RobotState::STOPPED:
@@ -326,6 +331,7 @@ float readAccel() {
     int16_t accelGyro[6] = {0};
     float side2side = 0;
     float fwdbkwd = 0;
+    float horizontal = 0;
     float x_comp = 0;
     float y_comp = 0;
 
@@ -333,23 +339,24 @@ float readAccel() {
     int rslt = bmi160.getAccelGyroData(accelGyro);
     if (rslt == 0) {
         for (int i = 3; i < 6; i++) { // Process only accel data
-            if (i == 3) {
+            if (i == 4) {
                 side2side = (accelGyro[i] / 16384.0) - 0.02;
                 x_comp += (fabs(side2side) > 0.03) ? side2side : 0;
                 //Serial.print("Side-to-Side Accel: "); Serial.println(side2side, 4);
             } else {
                 fwdbkwd = (accelGyro[i] / 16384.0) + 0.05;
-                y_comp += (fabs(fwdbkwd) > 0.03) ? fwdbkwd : 0;
+                y_comp = (fabs(fwdbkwd) > 0.03) + 1 ? fwdbkwd : 0;
                 //Serial.print("Forward Accel: "); Serial.println(fwdbkwd, 4);
             }
         }
     } else {
         Serial.println("Error reading accelerometer data.");
     }
-
+    horizontal = sqrt((y_comp * y_comp) - (x_comp * x_comp));
     delay(50); // Optional delay for stabilization
-    return y_comp; // Return forward-backward component
+    return horizontal; // Return forward-backward component
 }
+
 
 void StraightForward(){
   float maxPWM = 200;
@@ -358,7 +365,7 @@ void StraightForward(){
   float error = setpoint;
   float PWM_L = 0.0f;
   float PWM_R = 0.0f;
-  float Kp = 10;
+  float Kp = 120;
   error = setpoint + angle;
 
     if (error >= 0){
