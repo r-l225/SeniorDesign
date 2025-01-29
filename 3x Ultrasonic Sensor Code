@@ -15,26 +15,56 @@ const int CenterEchoPin = 25;
 const int LeftTrigPin = 19; 
 const int LeftEchoPin = 18; 
 
+const int RIGHT_LED_PIN = 27;
+const int CENTER_LED_PIN = 32;
+const int LEFT_LED_PIN = 33;
+
+int delayTime = 200;
 
 void setup()
 {
   Serial.begin(115200); // Init Serial at 115200 Baud
   ultra_Sensor_setup();
+  pinMode(RIGHT_LED_PIN, OUTPUT);
+  pinMode(CENTER_LED_PIN, OUTPUT);
+  pinMode(LEFT_LED_PIN, OUTPUT);
 
 }
 
 void loop()
 {
+  
   float ultrasensorDistance1 = ultra_Sensor_read(RightTrigPin, RightEchoPin);
   Serial.println(ultrasensorDistance1);
-  delay(250);
 
+  if (ultrasensorDistance1 < 50){
+    digitalWrite(RIGHT_LED_PIN, HIGH);
+  }
+  else{
+    digitalWrite(RIGHT_LED_PIN, LOW);
+  }
+  delay(delayTime);
   float ultrasensorDistance2 = ultra_Sensor_read(CenterTrigPin, CenterEchoPin);
   Serial.println(ultrasensorDistance2);
-  delay(250);
-
+  
+  
+  if (ultrasensorDistance2 < 50){
+    digitalWrite(CENTER_LED_PIN, HIGH);
+  }
+  else{
+    digitalWrite(CENTER_LED_PIN, LOW);
+  }
+  delay(delayTime;
   float ultrasensorDistance3 = ultra_Sensor_read(LeftTrigPin, LeftEchoPin);
   Serial.println(ultrasensorDistance3);
+ 
+
+  if (ultrasensorDistance3 < 50){
+    digitalWrite(LEFT_LED_PIN, HIGH);
+  }
+  else{
+    digitalWrite(LEFT_LED_PIN, LOW);
+  }
   delay(250);
 }
 
@@ -63,10 +93,10 @@ float ultra_Sensor_read(byte TRIG_PIN, byte ECHO_PIN){
   delayMicroseconds(10);
   digitalWrite(TRIG_PIN, LOW);
   // Reads the ECHO_PIN, returns the sound wave travel time in microseconds
+  //delayMicroseconds(24);
   duration = pulseIn(ECHO_PIN, HIGH);
   // Calculate the distance
-  distanceCm = duration * SOUND_SPEED/2;
+  distanceCm = (duration) * SOUND_SPEED/2;
   
   return distanceCm;
 }
-
