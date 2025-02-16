@@ -54,6 +54,12 @@ volatile State currentState = WAITING;
 
 volatile uint8_t boundaryCode = 0xF;
 volatile bool opponentDetected = false;
+volatile bool centerDetected = false;
+volatile bool leftDetected = false;
+volatile bool rightDetected = false;
+
+const float SENSOR_ANGLE = 30.0;
+const float COS_30 = 0.866;  
 
 // Task handles
 TaskHandle_t Task1;  // Sensor reading task
@@ -62,7 +68,7 @@ TaskHandle_t Task2;  // Motor control task
 void IR_Sensor_setup();
 uint8_t IR_Sensor_read();
 void ultra_Sensor_setup();
-float ultra_Sensor_read();
+float ultra_Sensor_read(byte TRIG_PIN, byte ECHO_PIN);
 void TaskSensors(void *pvParameters);
 void TaskNavigation(void *pvParameters);
 void StopMotors();
@@ -172,22 +178,13 @@ void TaskSensors(void *pvParameters) {
       continue;
     }
 
-    uint8_t newBoundaryCode = IR_Sensor_read();
-    float distance = ultra_Sensor_read();
-
     xSemaphoreTake(stateMutex, portMAX_DELAY);
-    boundaryCode = newBoundaryCode;
-    // Determine if opponent is detected based on distance
-    if (distance > 0 && distance <= detectionThreshold) {
-      opponentDetected = true;  // Opponent detected
-    } else {
-      opponentDetected = false; // No opponent detected
-    }
+    boundaryCode = IR_Sensor_read();
+    updateOpponentDetection();
     xSemaphoreGive(stateMutex);
 
     changeState();
-
-    vTaskDelay(5 / portTICK_PERIOD_MS);
+    vTaskDelay(50 / portTICK_PERIOD_MS);
   }
 }
 
@@ -242,20 +239,68 @@ void TaskNavigation(void *pvParameters) {
   }
 }
 
+void updateOpponentDetection() {
+  float center = ultra_Sensor_read(CenterTrigPin, CenterEchoPin);
+  float left = ultra_Sensor_read(LeftTrigPin, LeftEchoPin);
+  float right = ultra_Sensor_read(RightTrigPin, RightEchoPin);
+
+  float effectiveLeft = left * COS_30;
+  float effectiveRight = right * COS_30;
+
+  xSemaphoreTake(stateMutex, portMAX_DELAY);
+  centerDetected = (center <= detectionThreshold);
+  leftDetected = (left <= detectionThreshold);
+  rightDetected = (right <= detectionThreshold);
+  xSemaphoreGive(stateMutex);
+}
 
 // Handle state changes based on sensor input
 void changeState() {
-  static State lastState = STOPPED;
-  if (boundaryCode != 0xF) {
+  // Safely read sensor states
+  xSemaphoreTake(stateMutex, portMAX_DELAY);
+  bool boundaryDetected = (boundaryCode != 0xF);
+  bool currentCenter = centerDetected;
+  bool currentLeft = leftDetected;
+  bool currentRight = rightDetected;
+  xSemaphoreGive(stateMutex);
+
+  if (boundaryDetected) {
     currentState = AVOID;
-  } else if (opponentDetected) {
+  } 
+  else if (currentCenter) {
     currentState = MOVING_FORWARD;
-  } else {
+  }
+  else if (currentLeft || currentRight) {
+    currentState = CENTERING;
+  }
+  else {
     currentState = SEARCHING;
   }
 }
 
 void CenterOnTarget() {
+   xSemaphoreTake(stateMutex, portMAX_DELAY);
+  bool currentLeft = leftDetected;
+  bool currentRight = rightDetected;
+  float leftDist = ultra_Sensor_read(LeftTrigPin, LeftEchoPin) * COS_30;
+  float rightDist = ultra_Sensor_read(RightTrigPin, RightEchoPin) * COS_30;
+  xSemaphoreGive(stateMutex);
+
+  float diff = rightDist - leftDist;
+
+  if (diff > 5) { 
+    ledcWrite(L_IN1, 100);
+    ledcWrite(L_IN2, 0);
+    ledcWrite(R_IN3, 80);
+    ledcWrite(R_IN4, 0);
+  } else if (diff < -5) { 
+    ledcWrite(L_IN1, 80);
+    ledcWrite(L_IN2, 0);
+    ledcWrite(R_IN3, 100);
+    ledcWrite(R_IN4, 0);
+  } else { 
+    Forward();
+  }
 }
 
 void handleBoundaryMovement() {
@@ -341,24 +386,22 @@ void ultra_Sensor_setup() {
   pinMode(RightEchoPin, INPUT);
 }
 
-// Enhanced Ultrasonic Sensor Read
-float ultra_Sensor_read() {
+float ultra_Sensor_read(byte TRIG_PIN, byte ECHO_PIN){
   float SOUND_SPEED = 0.034;
   long duration;
   float distanceCm;
   // Clears the TRIG_PIN
-  digitalWrite(CenterTrigPin, LOW);
-  delayMicroseconds(2);
+  digitalWrite(TRIG_PIN, LOW);
+  delayMicroseconds(5);
   // Sets the TRIG_PIN on HIGH state for 10 micro seconds
-  digitalWrite(CenterTrigPin, HIGH);
+  digitalWrite(TRIG_PIN, HIGH);
   delayMicroseconds(10);
-  digitalWrite(CenterTrigPin, LOW);
-  
+  digitalWrite(TRIG_PIN, LOW);
   // Reads the ECHO_PIN, returns the sound wave travel time in microseconds
-  duration = pulseIn(CenterEchoPin, HIGH);
-  
+  //delayMicroseconds(24);
+  duration = pulseIn(ECHO_PIN, HIGH);
   // Calculate the distance
-  distanceCm = duration * SOUND_SPEED/2;
+  distanceCm = (duration) * SOUND_SPEED/2;
   
   return distanceCm;
 }
