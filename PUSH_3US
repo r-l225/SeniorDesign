@@ -8,9 +8,9 @@
 
 SemaphoreHandle_t stateMutex;
 
-const int R_LED = 12;
-const int G_LED = 14;
-const int B_LED = 27;
+const int R_LED = 32;
+const int G_LED = 33;
+const int B_LED = 23;
 const int BUTTON_PIN = 13; // Button pin for starting
 
 // IR Sensor Pins 
@@ -22,11 +22,11 @@ int IRSensor4 = 35;
 const int CenterTrigPin = 26; 
 const int CenterEchoPin = 25; 
 
-const int LeftTrigPin = 22;
-const int LeftEchoPin = 21;
+const int LeftTrigPin = 19;
+const int LeftEchoPin = 18;
 
-const int RightTrigPin = 33;
-const int RightEchoPin = 32;
+const int RightTrigPin = 5;
+const int RightEchoPin = 17;
 
 // Declarations for the BMI160
 DFRobot_BMI160 bmi160;
@@ -34,8 +34,8 @@ const int8_t i2c_addr = 0x69;
 
 
 // Motor Control Pins
-const int L_IN1 = 18;   // Control pin 1 for left motor
-const int L_IN2 = 19;   // Control pin 2 for left motor
+const int L_IN1 = 0;   // Control pin 1 for left motor
+const int L_IN2 = 2;   // Control pin 2 for left motor
 const int R_IN3 = 4;   // Control pin 1 for right motor
 const int R_IN4 = 16;  // Control pin 2 for right motor
 
