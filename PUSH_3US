@@ -1,8 +1,12 @@
+#include <DFRobot_BMI160.h>
+
+
+
 SemaphoreHandle_t stateMutex;
 
-const int R_LED = 23;
+const int R_LED = 32;
 const int G_LED = 33;
-const int B_LED = 32;
+const int B_LED = 23;
 const int BUTTON_PIN = 15; // Button pin for starting
 
 // IR Sensor Pins 
@@ -28,7 +32,7 @@ const int8_t i2c_addr = 0x69;
 // Motor Control Pins
 const int L_IN1 = 0;   // Control pin 1 for left motor
 const int L_IN2 = 2;   // Control pin 2 for left motor
-const int R_IN3 = 4;   // Control pin 1 for right motor
+const int R_IN3 = 4;   // Control pin 1 for ri160_okght motor
 const int R_IN4 = 16; // Control pin 2 for right motor
 
 
@@ -39,7 +43,7 @@ const int speed = 255;      // Maximum PWM duty cycle
 
 
 // Thresholds
-const int detectionThreshold = 15;
+const int detectionThreshold = 50;
 float center, left, right;
 float effectiveLeft, effectiveRight;
 
@@ -176,14 +180,16 @@ void TaskSensors(void *pvParameters) {
       continue;
     }
 
-    //boundaryCode = IR_Sensor_read();
+    boundaryCode = IR_Sensor_read();
     updateOpponentDetection();
 
     xSemaphoreTake(stateMutex, portMAX_DELAY);
     
     centerDetected = (center <= detectionThreshold);
-    leftDetected = (effectiveLeft <= detectionThreshold);
-    rightDetected = (effectiveRight <= detectionThreshold);
+    leftDetected = (effectiveLeft <= (detectionThreshold + 20));
+    rightDetected = (effectiveRight <= (detectionThreshold + 20));
+
+    bool boundaryDetected = (boundaryCode != 0xF);
 
     Serial.print("Center Detected b4 state change: "); Serial.println(centerDetected);
     Serial.print("Left Detected: "); Serial.println(leftDetected);
@@ -193,7 +199,7 @@ void TaskSensors(void *pvParameters) {
 
     changeState();
 
-    vTaskDelay(300 / portTICK_PERIOD_MS);
+    vTaskDelay(100 / portTICK_PERIOD_MS);
   }
 }
 
@@ -220,14 +226,14 @@ void TaskNavigation(void *pvParameters) {
       digitalWrite(R_LED, HIGH);
       digitalWrite(G_LED, LOW);
       digitalWrite(B_LED, LOW);
-        //Forward(speed);
+        Forward(speed);
         break;
 
       case AVOID:
       digitalWrite(R_LED, LOW);
       digitalWrite(G_LED, LOW);
       digitalWrite(B_LED, HIGH);
-      //handleBoundaryMovement();
+      handleBoundaryMovement();
         break;
 
       case CENTERING:
@@ -244,7 +250,7 @@ void TaskNavigation(void *pvParameters) {
         break;
     }
 
-    vTaskDelay(200 / portTICK_PERIOD_MS);
+    vTaskDelay(100 / portTICK_PERIOD_MS);
   }
 }
 
@@ -253,8 +259,8 @@ void updateOpponentDetection() {
   left = ultra_Sensor_read(LeftTrigPin, LeftEchoPin);
   right = ultra_Sensor_read(RightTrigPin, RightEchoPin);
 
-  effectiveLeft = left * COS_30;
-  effectiveRight = right * COS_30;
+  effectiveLeft = left;
+  effectiveRight = right;
 
 // Print raw sensor readings
 Serial.print("Center: "); Serial.println(center);
@@ -282,13 +288,13 @@ void changeState() {
     currentState = AVOID;
     Serial.println("New State: AVOID");
   } 
+    else if (currentCenter) {
+    currentState = MOVING_FORWARD;
+    Serial.println("New State: MOVING_FORWARD");
+  }
     else if (currentLeft || currentRight) {
     currentState = CENTERING;
     Serial.println("New State: CENTERING");
-  }
-  else if (currentCenter) {
-    currentState = MOVING_FORWARD;
-    Serial.println("New State: MOVING_FORWARD");
   }
   else {
     currentState = SEARCHING;
@@ -297,26 +303,21 @@ void changeState() {
 }
 
 void CenterOnTarget() {
-    float diff = effectiveLeft - effectiveRight;
-
-    Serial.print("Centering Diff: ");
-    Serial.println(diff);
-
-    if (diff > 10) { // Object is on the right → Turn right
+    if ((effectiveLeft > 10) & (effectiveLeft < 60)) { // Object is on the right → Turn right
         Serial.println("Turning Left");
-        TurnLeft(190);
+        RotateToSmallAngle(25);
     } 
-    else if (diff < -10) { // Object is on the left → Turn left
+    else if ((effectiveRight > 10) & (effectiveRight < 60)) { // Object is on the left → Turn left
         Serial.println("Turning Right");
-        TurnRight(190);
+        RotateToSmallAngle(-25);
     } 
+    else if ((center > 10) & (center < 80)){
+      currentState = MOVING_FORWARD;
+    }
     else { 
-        StopMotors();
+      currentState = SEARCHING;
     }
 }
-
-
-
 
 void handleBoundaryMovement() {
   switch (boundaryCode) {
@@ -516,11 +517,11 @@ void RotateToBigAngle(float setpoint){
       PWM_L = error * Kp;
       PWM_R = error * Kp;
 
-      if (PWM_L > 105){
+      if (PWM_L < 105){
         ledcWrite(L_IN1, 105); // L Forward
         ledcWrite(L_IN2, 0);          // L Backward == 0
         ledcWrite(R_IN3, 0);          // R Forward == 0
-        ledcWrite(R_IN4, 75); // R Backward
+        ledcWrite(R_IN4, 105); // R Backward
       }
 
       else{
@@ -540,7 +541,7 @@ void RotateToBigAngle(float setpoint){
       PWM_L = error * Kp;
       PWM_R = error * Kp;
       
-      if (PWM_L > 105){
+      if (PWM_L < 105){
         ledcWrite(L_IN1, 0);          // L Forward == 0
         ledcWrite(L_IN2, 105); // L Backward 
         ledcWrite(R_IN3, 105); // R Forward
@@ -565,7 +566,6 @@ void RotateSearch(int speed){
   ledcWrite(R_IN3, 0);    // Right motor IN3 off
   ledcWrite(R_IN4, 170); 
 }
-
 
 void Forward(int speed) {
   ledcWrite(L_IN1, speed);
@@ -595,8 +595,6 @@ void TurnLeft(int speed) {
     ledcWrite(R_IN3, speed);  // Right motor moves forward
     ledcWrite(R_IN4, 0);      // Right motor backward = OFF
 }
-
-
 
 void StraightBack(){
   float maxPWM = 160;
