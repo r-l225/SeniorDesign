@@ -39,7 +39,7 @@ const int R_IN4 = 16; // Control pin 2 for right motor
 // PWM frequency and resolution settings for ESP32
 const int PWMFreq = 1000;       // PWM frequency in Hz
 const int PWMResolution = 8;    // PWM resolution (8 bits)
-const int speed = 255;      // Maximum PWM duty cycle
+const int speed = 180;      // Maximum PWM duty cycle
 
 
 // Thresholds
@@ -471,7 +471,7 @@ void RotateToSmallAngle(float setpoint){
   float error = setpoint;
   float PWM_L = 0;
   float PWM_R = 0;
-  float Kp = 180/setpoint;
+  float Kp = 140/setpoint;
   if (error < 0){
     while (error <= -2){
       PWM_L = error * Kp;
