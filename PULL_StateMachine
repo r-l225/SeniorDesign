@@ -8,6 +8,8 @@ TaskHandle_t TaskNavigationHandle;
 // ================= Pins =================
 const int FrontLeftSensor  = 36;
 const int FrontRightSensor = 39;
+const int BackLeftSensor = 34;
+const int BackRightSensor = 35;
 
 // Motor pins
 const int L_IN1 = 0;
@@ -85,6 +87,8 @@ void setup() {
   // IR sensor pins
   pinMode(FrontLeftSensor, INPUT);
   pinMode(FrontRightSensor, INPUT);
+  pinMode(BackLeftSensor, INPUT);
+  pinMode(BackRightSensor, INPUT);
 
   // Motor pin setup
   ledcAttach(L_IN1,  PWMFreq, PWMResolution);
@@ -208,9 +212,15 @@ void TaskSensors(void *pvParameters) {
         uint8_t boundary = readIR();
         float forwardAccel = readAccel(); 
          
-        if (boundary == 3) {
-            changeState(RobotState::STOPPED);
+        if (boundary == 3){ // Endline Detected
+          changeState(RobotState::STOPPED);
         } 
+        else if (boundary == 5){ //Right Boundary Detected
+          changeState(RobotState::STOPPED);
+        }
+        else if (boundary == 10){ //Left Boundary DEtected
+          changeState(RobotState::STOPPED);
+        }
 
         static unsigned long noMovementStart = 0; // Tracks the start of the no-movement period
 
@@ -403,8 +413,9 @@ void StopMotors() {
 uint8_t readIR() {
   int statusFL = digitalRead(FrontLeftSensor);
   int statusFR = digitalRead(FrontRightSensor);
+  int statusBL = digitalRead(BackLeftSensor);
+  int statusBR = digitalRead(BackRightSensor);
   // If both sensors triggered => 3, etc.
-  return (statusFL << 1) | statusFR; 
+  return (statusBL << 3) | (statusBR << 2) |(statusFL << 1) | statusFR; 
 }
-
 
