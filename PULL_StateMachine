@@ -10,16 +10,16 @@ const int FrontLeftSensor  = 36;
 const int FrontRightSensor = 39;
 
 // Motor pins
-const int L_IN1 = 18;
-const int L_IN2 = 19;
+const int L_IN1 = 0;
+const int L_IN2 = 2;
 const int R_IN3 = 4;
 const int R_IN4 = 16;
 
 // Button & LEDs
-const int BUTTON_PIN  = 13;
-const int R_LED = 12;
-const int G_LED = 14;
-const int B_LED = 27;
+const int BUTTON_PIN  = 15;
+const int R_LED = 32;
+const int G_LED = 33;
+const int B_LED = 23;
 
 // ================= PWM =================
 const int PWMFreq       = 1000;   
@@ -180,9 +180,7 @@ void countdownStart() {
   Serial.println("Countdown complete");
 }
 
-// ============ changeState() ============
-// Handle state changes based on sensor input
-// ============ changeState() ============
+
 void changeState(RobotState newState) {
   xSemaphoreTake(stateMutex, portMAX_DELAY);
   currentState = newState;
@@ -201,9 +199,11 @@ void TaskSensors(void *pvParameters) {
             continue;
         }
         // 1) Read sensor data 
-        xSemaphoreTake(stateMutex, portMAX_DELAY);
+        //xSemaphoreTake(stateMutex, portMAX_DELAY);
         deltaAngle = readGyro(deltaAngle);
-        xSemaphoreGive(stateMutex);
+        Serial.print("Angle 1 : ");
+        Serial.println(deltaAngle);
+        //xSemaphoreGive(stateMutex);
         //deltaAngle = readGyro(deltaAngle);
         uint8_t boundary = readIR();
         float forwardAccel = readAccel(); 
@@ -261,14 +261,14 @@ void TaskNavigation(void *pvParameters) {
 
       case RobotState::MOVING_FORWARD:
         digitalWrite(R_LED, LOW);
-        digitalWrite(G_LED, HIGH);
-        digitalWrite(B_LED, LOW);
+        digitalWrite(B_LED, HIGH);
+        digitalWrite(G_LED, LOW);
 
         // Correct heading in real-time
         //deltaAngle += readGyro(deltaAngle);
         StraightForward();
         
-        digitalWrite(R_LED, LOW);
+        digitalWrite(R_LED, HIGH);
         digitalWrite(G_LED, LOW);
         digitalWrite(B_LED, LOW);
 
@@ -276,9 +276,9 @@ void TaskNavigation(void *pvParameters) {
 
       case RobotState::STOPPED:
         StopMotors();
-        digitalWrite(R_LED, HIGH); // Indicate STOPPED
+        digitalWrite(B_LED, HIGH); // Indicate STOPPED
         digitalWrite(G_LED, LOW);
-        digitalWrite(B_LED, LOW);
+        digitalWrite(R_LED, LOW);
         break;
     }
 
@@ -359,30 +359,33 @@ float readAccel() {
 
 
 void StraightForward(){
-  float maxPWM = 200;
+  float maxPWMR = 230;
+  float maxPWML = 230;
   float setpoint = 0.0f;
   float angle = deltaAngle;
+  Serial.print("Angle 2 : ");
+  Serial.println(angle);
   float error = setpoint;
   float PWM_L = 0.0f;
   float PWM_R = 0.0f;
-  float Kp = 120;
+  float Kp = 70;
   error = setpoint + angle;
 
     if (error >= 0){
-      PWM_R = maxPWM - abs(error * Kp);
+      PWM_R = maxPWMR - abs(error * Kp);
 
-      ledcWrite(L_IN1, maxPWM);     // L Forward == maxPWM
+      ledcWrite(L_IN1, maxPWMR);     // L Forward == maxPWM
       ledcWrite(L_IN2, 0);          // L Backward == 0
       ledcWrite(R_IN3, int(PWM_R)); // R Forward == maxPWM - error Correction
       ledcWrite(R_IN4, 0);          // R Backward == 0
 
     }
     else{
-      PWM_L = maxPWM - abs(error * Kp);
+      PWM_L = maxPWML - abs(error * Kp);
 
       ledcWrite(L_IN1, int(PWM_L)); // L Forward == maxPWM - error Correction
       ledcWrite(L_IN2, 0);          // L Backward == 0
-      ledcWrite(R_IN3, maxPWM);     // R Forward == maxPWM
+      ledcWrite(R_IN3, maxPWML);     // R Forward == maxPWM
       ledcWrite(R_IN4, 0);          // R Backward
     }
 }
@@ -403,3 +406,5 @@ uint8_t readIR() {
   // If both sensors triggered => 3, etc.
   return (statusFL << 1) | statusFR; 
 }
+
+
