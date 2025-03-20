@@ -1,0 +1,249 @@
+// P-Controller functions using Gyro and TB6612
+
+//PWMR, PWML
+
+//R_IN_1, R_IN2
+//A
+
+//L_IN1, L_IN2
+//B
+
+void RotateToSmallAngle(float setpoint){
+  float angle = 0;
+  float error = setpoint;
+  float PWM_L = 0;
+  float PWM_R = 0;
+  float Kp = 180/setpoint;
+  if (error < 0){
+    while (error <= -2){
+      PWM_L = error * Kp;
+      PWM_R = error * Kp;
+      if (PWM_L < 120){
+
+        
+        digitalWrite(L_IN1, HIGH); // L Forward
+        digitalWrite(L_IN2, LOW);    
+        analogWrite(PWML, 120);      // L Backward == 0
+
+        digitalWrite(R_IN3, LOW);          // R Forward == 0
+        digitalWrite(R_IN4, HIGH); // R Backward
+        analogWrite(PWMR, 120);
+      }
+      else{
+        digitalWrite(L_IN1, HIGH)); // L Forward
+        digitalWrite(L_IN2, LOW);          // L Backward == 0
+        analogWrite(PWML, int(PWM_L)); 
+
+        digitalWrite(R_IN3, LOW);          // R Forward == 0
+        digitalWrite(R_IN4, HIGH); // R Backward
+        analogWrite(PWMR, int(PWM_R));
+      }
+      angle += readGyro();
+      error = setpoint - angle;
+      //// Motor Controls
+    }
+    StopMotors();
+  }
+  else{
+    while (error >= 2){
+      PWM_L = error * Kp;
+      PWM_R = error * Kp;
+      if (PWM_L < 120){
+        digitalWrite(L_IN1, LOW);          // L Forward == 0
+        digitalWrite(L_IN2, HIGH); // L Backward 
+        analogWrite(PWML, 120);
+
+        digitalWrite(R_IN3, HIGH); // R Forward
+        digitalWrite(R_IN4, LOW);       // R Backward == 0
+        analogWrite(PWMR, 120);
+      }
+      else{
+        digitalWrite(L_IN1, LOW);          // L Forward == 0
+        digitalWrite(L_IN2, HIGH); // L Backward 
+        analogWrite(PWML, int(PWM_L));
+
+        digitalWrite(R_IN3, HIGH); // R Forward
+        digitalWrite(R_IN4, LOW);         // R Backward == 0
+        analogWrite(PWMR, int(PWM_R));
+      }
+      angle += readGyro();
+      error = setpoint - angle;
+    }
+    StopMotors();
+  }
+}
+
+// Rotate to any desired angle greater than 120 degrees
+void RotateToBigAngle(float setpoint){
+  float angle = 0;
+  float error = setpoint;
+  float PWM_L = 0;
+  float PWM_R = 0;
+  float Kp = 255/setpoint;
+  if (error < 0){
+    while (error <= -2){
+      PWM_L = error * Kp;
+      PWM_R = error * Kp;
+
+      if (PWM_L < 150){
+        digitalWrite(L_IN1, HIGH); // L Forward
+        digitalWrite(L_IN2, LOW);          // L Backward == 0
+        analogWrite(PWML, 150);
+
+        digitalWrite(R_IN3, LOW);          // R Forward == 0
+        digitalWrite(R_IN4, HIGH); // R Backward
+        analogWrite(PWMR, 150);
+      }
+
+      else{
+        digitalWrite(L_IN1, HIGH); // L Forward
+        digitalWrite(L_IN2, LOW);          // L Backward == 0
+        analogWrite(PWML, int(PWM_L));
+
+        digitalWrite(R_IN3, LOW);          // R Forward == 0
+        digitalWrite(R_IN4, HIGH); // R Backward
+        analogWrite(PWMR, int(PWM_R));
+        
+      }
+      angle += readGyro();
+      error = setpoint - angle;
+      //// Motor Controls
+    }
+    StopMotors();
+  }
+  else{
+    while (error >= 2){
+      PWM_L = error * Kp;
+      PWM_R = error * Kp;
+
+      if (PWM_L < 150){
+        digitalWrite(L_IN1, LOW);          // L Forward == 0
+        digitalWrite(L_IN2, HIGH); // L Backward 
+        analogWrite(PWML, 150);
+
+        digitalWrite(R_IN3, HIGH); // R Forward
+        digitalWrite(R_IN4, LOW);       // R Backward == 0
+        analogWrite(PWMR, 150);
+      }
+      else{ 
+        digitalWrite(L_IN1, LOW);          // L Forward == 0
+        digitalWrite(L_IN2, HIGH); // L Backward 
+        analogWrite(PWML, int(PWM_L));
+
+        digitalWrite(R_IN3, HIGH); // R Forward
+        digitalWrite(R_IN4, LOW);           // R Backward == 0
+        analogWrite(PWMR, int(PWM_R));
+      }
+      angle += readGyro();
+      error = setpoint - angle;
+    }
+    StopMotors();
+  }
+}
+
+void Forward(int speed) {
+  float maxPWMR = speed;
+  float maxPWML = speed;
+  float setpoint = 0.0f;
+  float angle = readGyro();
+
+  float error = setpoint;
+  float PWM_L = 0.0f;
+  float PWM_R = 0.0f;
+  float Kp = 60;
+  error = setpoint + angle;
+
+    if (error >= 0){
+      PWM_R = maxPWMR - abs(error * Kp);
+      if (PWM_R < 190){
+        PWM_R = 190;
+      }
+      digitalWrite(L_IN1, HIGH);     // L Forward == maxPWM
+      digitalWrite(L_IN2, LOW);          // L Backward == 0
+      analogWrite(PWML, maxPWMR);
+
+      digitalWrite(R_IN3, HIGH); // R Forward == maxPWM - error Correction
+      digitalWrite(R_IN4, LOW);          // R Backward == 0
+      analogWrite(PWMR, int(PWM_R));
+
+    }
+    else{
+      PWM_L = maxPWML - abs(error * Kp);
+      if (PWM_L < 190){
+        PWM_L = 190;
+      }
+      digitalWrite(L_IN1, HIGH); // L Forward == maxPWM - error Correction
+      digitalWrite(L_IN2, LOW);          // L Backward == 0
+      analogWrite(PWML, int(PWM_L));
+
+      digitalWrite(R_IN3, HIGH);     // R Forward == maxPWM
+      digitalWrite(R_IN4, LOW);          // R Backward
+      analogWrite(PWMR, maxPWML);
+    }
+}
+
+
+
+void StraightBack(){
+  float maxPWM = 255;
+  float setpoint = 0;
+  float angle = 0;
+  float error = setpoint;
+  float PWM_L = 0;
+  float PWM_R = 0;
+  float Kp = maxPWM/10;
+
+  angle += readGyro();
+  error = setpoint + angle;
+  for (int temp = 0; temp < 9; temp++){
+
+    if (error > 1){
+      PWM_L = maxPWM - abs(error * Kp);
+      PWM_R = maxPWM - abs(error * Kp);
+               // R Backward
+      digitalWrite(L_IN1, LOW);                   // L Forward == maxPWM - error Correction
+      digitalWrite(L_IN2, HIGH);              // L Backward == 0
+      analogWrite(PWML, int(PWM_L));
+
+      digitalWrite(R_IN3, LOW);                   // R Forward == maxPWM
+      digitalWrite(R_IN4, HIGH);  
+      analogWrite(PWMR, maxPWM);
+
+      angle += readGyro();
+      error = setpoint + angle;
+    }
+    else if (error < -1){
+      PWM_L = maxPWM - abs(error * Kp);
+      PWM_R = maxPWM - abs(error * Kp);
+
+      digitalWrite(L_IN1, LOW);     // L Forward == maxPWM
+      digitalWrite(L_IN2, HIGH);          // L Backward == 0
+      analogWrite(PWML, maxPWM);
+
+      digitalWrite(R_IN3, LOW); // R Forward == maxPWM - error Correction
+      digitalWrite(R_IN4, HIGH); 
+      analogWrite(PWMR, int(PWM_R));
+
+      angle += readGyro();
+      error = setpoint + angle;
+    }
+    else{
+      PWM_L = maxPWM - abs(error * Kp);
+      PWM_R = maxPWM - abs(error * Kp);
+               // R Backward
+      digitalWrite(L_IN1, LOW);                   // L Forward == maxPWM - error Correction
+      digitalWrite(L_IN2, HIGH);          // L Backward == 0
+      analogWrite(PWML, maxPWM);
+      
+      digitalWrite(R_IN3, LOW);                   // R Forward == maxPWM
+      digitalWrite(R_IN4, HIGH); 
+      analogWrite(PWMR, maxPWM);
+
+      angle += readGyro();
+      error = setpoint + angle;
+    }
+    angle += readGyro();
+    error = setpoint + angle;
+  }
+  StopMotors();
+}
