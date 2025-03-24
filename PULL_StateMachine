@@ -255,7 +255,7 @@ if (fabs(forwardAccel) < movementThreshold) {
     Serial.println("Movement detected. Timer reset.");
 }
         // Delay to allow task scheduling
-        vTaskDelay(50 / portTICK_PERIOD_MS);
+        vTaskDelay(20 / portTICK_PERIOD_MS);
     }
 }
 
@@ -312,7 +312,7 @@ void TaskNavigation(void *pvParameters) {
         break;
     }
 
-    vTaskDelay(20 / portTICK_PERIOD_MS);
+    vTaskDelay(100 / portTICK_PERIOD_MS);
   }
 }
 
@@ -412,29 +412,43 @@ void StraightForward(){
   float PWM_L = 0.0f;
   float PWM_R = 0.0f;
 
-  float Kp = 80;
-  float Kd = 0;
+  float Kp = 62;
+  float Kd = 0.15;
   error = setpoint + angle;
 
     if (error >= 1){
       PWM_R = maxPWMR - abs(error * Kp + Kd/error);
-
+      if (PWM_R < 220){
+      ledcWrite(L_IN1, maxPWML);     // L Forward == maxPWM
+      ledcWrite(L_IN2, 0);          // L Backward == 0
+      ledcWrite(R_IN3, 220); // R Forward == maxPWM - error Correction
+      ledcWrite(R_IN4, 0);   
+      }
+      else{
       ledcWrite(L_IN1, maxPWML);     // L Forward == maxPWM
       ledcWrite(L_IN2, 0);          // L Backward == 0
       ledcWrite(R_IN3, int(PWM_R)); // R Forward == maxPWM - error Correction
-      ledcWrite(R_IN4, 0);          // R Backward == 0
-
+      ledcWrite(R_IN4, 0); 
+      }
+              // R Backward == 0
     }
     else if(error <= -1){
       PWM_L = maxPWML - abs(error * Kp + Kd/error);
-
-      ledcWrite(L_IN1, int(PWM_L)); // L Forward == maxPWM - error Correction
+      if (PWM_L < 220){
+      ledcWrite(L_IN1, 220);     // L Forward == maxPWM
       ledcWrite(L_IN2, 0);          // L Backward == 0
-      ledcWrite(R_IN3, maxPWMR);     // R Forward == maxPWM
-      ledcWrite(R_IN4, 0);          // R Backward
+      ledcWrite(R_IN3, maxPWML); // R Forward == maxPWM - error Correction
+      ledcWrite(R_IN4, 0);   
+      }
+      else{
+      ledcWrite(L_IN1, int(PWM_L));     // L Forward == maxPWM
+      ledcWrite(L_IN2, 0);          // L Backward == 0
+      ledcWrite(R_IN3, maxPWMR); // R Forward == maxPWM - error Correction
+      ledcWrite(R_IN4, 0); 
+      }        // R Backward
     }
     else{
-      ledcWrite(L_IN1, maxPWML); // L Forward == maxPWM - error Correction
+      ledcWrite(L_IN1, maxPWMR); // L Forward == maxPWM - error Correction
       ledcWrite(L_IN2, 0);          // L Backward == 0
       ledcWrite(R_IN3, maxPWMR);     // R Forward == maxPWM
       ledcWrite(R_IN4, 0);          // R Backward
@@ -464,20 +478,22 @@ void recorrect(uint8_t bounds){
   StopMotors();
   if (bounds == 5){ // boundary on right
     BKWD();
-    delay(200);
+    delay(300);
     RotateToBigAngle(-90); //
     FWD();
-    delay(250);
+    delay(200);
     RotateToSmallAngle(60);
+    delay(10);
     deltaAngle = 0;
   }
   else if(bounds == 10){// boundary on left
     BKWD();
-    delay(200);
+    delay(300);
     RotateToBigAngle(90); //
     FWD();
-    delay(250);
+    delay(200);
     RotateToSmallAngle(-60);
+    delay(10);
     deltaAngle = 0;
   }
   StopMotors();
@@ -495,17 +511,17 @@ void RotateToSmallAngle(float setpoint){
     while (error <= -2){
       PWM_L = error * Kp;
       PWM_R = error * Kp;
-      if (PWM_R < 150){
-        ledcWrite(L_IN1, 150); // L Forward
+      if (PWM_R < 205){
+        ledcWrite(L_IN1, 205); // L Forward
         ledcWrite(L_IN2, 0);          // L Backward == 0
         ledcWrite(R_IN3, 0);          // R Forward == 0
-        ledcWrite(R_IN4, 150); // R Backward
+        ledcWrite(R_IN4, 0); // R Backward
       }
       else{
         ledcWrite(L_IN1, int(PWM_L)); // L Forward
         ledcWrite(L_IN2, 0);          // L Backward == 0
         ledcWrite(R_IN3, 0);          // R Forward == 0
-        ledcWrite(R_IN4, int(PWM_R)); // R Backward
+        ledcWrite(R_IN4, int(0)); // R Backward
       }
       angle += readGyro(temp);
       error = setpoint - angle;
@@ -517,14 +533,14 @@ void RotateToSmallAngle(float setpoint){
     while (error >= 2){
       PWM_L = error * Kp;
       PWM_R = error * Kp;
-      if (PWM_L < 150){
+      if (PWM_L < 205){
       ledcWrite(L_IN1, 0); // L Forward
-      ledcWrite(L_IN2, 150);          // L Backward == 0
-      ledcWrite(R_IN3, 150);          // R Forward == 0
+      ledcWrite(L_IN2, 0);          // L Backward == 0
+      ledcWrite(R_IN3, 205);          // R Forward == 0
       ledcWrite(R_IN4, 0); // R Backward
       }
       ledcWrite(L_IN1, 0);          // L Forward == 0
-      ledcWrite(L_IN2, int(PWM_L)); // L Backward 
+      ledcWrite(L_IN2, int(0)); // L Backward 
       ledcWrite(R_IN3, int(PWM_R)); // R Forward
       ledcWrite(R_IN4, 0);          // R Backward == 0
       
@@ -548,18 +564,18 @@ void RotateToBigAngle(float setpoint){
       PWM_L = error * Kp;
       PWM_R = error * Kp;
 
-      if (PWM_L < 150){
-        ledcWrite(L_IN1, 150); // L Forward
+      if (PWM_L < 220){
+        ledcWrite(L_IN1, 220); // L Forward
         ledcWrite(L_IN2, 0);          // L Backward == 0
         ledcWrite(R_IN3, 0);          // R Forward == 0
-        ledcWrite(R_IN4, 150); // R Backward
+        ledcWrite(R_IN4, 0); // R Backward
       }
 
       else{
         ledcWrite(L_IN1, int(PWM_L)); // L Forward
         ledcWrite(L_IN2, 0);          // L Backward == 0
         ledcWrite(R_IN3, 0);          // R Forward == 0
-        ledcWrite(R_IN4, int(PWM_R)); // R Backward
+        ledcWrite(R_IN4, int(0)); // R Backward
       }
       angle += readGyro(temp);
       error = setpoint - angle;
@@ -572,15 +588,15 @@ void RotateToBigAngle(float setpoint){
       PWM_L = error * Kp;
       PWM_R = error * Kp;
       
-      if (PWM_L < 150){
+      if (PWM_L < 220){
         ledcWrite(L_IN1, 0);          // L Forward == 0
-        ledcWrite(L_IN2, 150); // L Backward 
-        ledcWrite(R_IN3, 150); // R Forward
+        ledcWrite(L_IN2, 0); // L Backward 
+        ledcWrite(R_IN3, 220); // R Forward
         ledcWrite(R_IN4, 0);          // R Backward == 0
       }
       else{
         ledcWrite(L_IN1, 0);          // L Forward == 0
-        ledcWrite(L_IN2, int(PWM_L)); // L Backward 
+        ledcWrite(L_IN2, int(0)); // L Backward 
         ledcWrite(R_IN3, int(PWM_R)); // R Forward
         ledcWrite(R_IN4, 0);          // R Backward == 0
       }
@@ -590,5 +606,6 @@ void RotateToBigAngle(float setpoint){
     StopMotors();
   }
 }
+
 
 
