@@ -35,10 +35,10 @@ const int8_t i2c_addr = 0x69;
 const int  PWMR = 27;
 const int  PWML =14;
 
-const int  R_IN3 =2;
-const int  R_IN4 =0;
-const int  L_IN1 =4;
-const int  L_IN2 =13;
+const int  R_IN3 =4;
+const int  R_IN4 =13;
+const int  L_IN1 =0;
+const int  L_IN2 =2;
 
 const int  STBY =12;
 
@@ -48,11 +48,11 @@ const int  STBY =12;
 const int PWMFreq = 1000;       // PWM frequency in Hz
 const int PWMResolution = 8;    // PWM resolution (8 bits)
 
-const int speed = 180;      // Maximum PWM duty cycle
+const int speed = 120;      // Maximum PWM duty cycle
 
 
 // Thresholds
-const int detectionThreshold = 30;
+const int detectionThreshold = 50;
 float center, left, right;
 float effectiveLeft, effectiveRight;
 
@@ -505,8 +505,8 @@ void RotateToSmallAngle(float setpoint){
   float PWM_L = 0;
   float PWM_R = 0;
   float Kp = 180/setpoint;
-  if (error < 0){
-    while (error <= -2){
+  if (error > 0){
+    while (error >= 2){
       PWM_L = error * Kp;
       PWM_R = error * Kp;
       if (PWM_L < 120){
@@ -536,7 +536,7 @@ void RotateToSmallAngle(float setpoint){
     StopMotors();
   }
   else{
-    while (error >= 2){
+    while (error <= 2){
       PWM_L = error * Kp;
       PWM_R = error * Kp;
       if (PWM_L < 120){
@@ -572,8 +572,8 @@ void RotateToBigAngle(float setpoint){
   float PWM_L = 0;
   float PWM_R = 0;
   float Kp = 255/setpoint;
-  if (error < 0){
-    while (error <= -2){
+  if (error > 0){
+    while (error >= 2){
       PWM_L = error * Kp;
       PWM_R = error * Kp;
 
@@ -604,7 +604,7 @@ void RotateToBigAngle(float setpoint){
     StopMotors();
   }
   else{
-    while (error >= 2){
+    while (error <= -2){
       PWM_L = error * Kp;
       PWM_R = error * Kp;
 
@@ -668,7 +668,7 @@ void Forward(int speed) {
   float Kp = 60;
   error = setpoint + angle;
 
-    if (error >= 0){
+    if (error <= 0){
       PWM_R = maxPWMR - abs(error * Kp);
       if (PWM_R < 190){
         PWM_R = 190;
