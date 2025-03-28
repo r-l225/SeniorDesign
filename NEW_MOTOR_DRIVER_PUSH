@@ -4,9 +4,9 @@
 
 SemaphoreHandle_t stateMutex;
 
-const int R_LED = 33;
+const int R_LED = 23;
 const int G_LED = 32;
-const int B_LED = 23;
+const int B_LED = 33;
 const int BUTTON_PIN = 15; // Button pin for starting
 //const int clk = 6; // Button pin for starting
 //const int d0 = 7; // Button pin for starting
@@ -48,8 +48,9 @@ const int  STBY = 12;
 const int PWMFreq = 1000;       // PWM frequency in Hz
 const int PWMResolution = 8;    // PWM resolution (8 bits)
 
+const int maxPUSH = 180;
 const int maxSpeed = 120;      // Maximum PWM duty cycle
-const int minSpeed = 60;
+const int minSpeed = 100;
 
 // Thresholds
 const int detectionThreshold = 50;
@@ -259,7 +260,7 @@ void TaskNavigation(void *pvParameters) {
       digitalWrite(R_LED, HIGH);
       digitalWrite(G_LED, LOW);
       digitalWrite(B_LED, HIGH);
-        Forward(maxSpeed);
+        Forward(maxPUSH);
         break;
 
       case AVOID:
@@ -336,17 +337,18 @@ void changeState() {
 }
 
 void CenterOnTarget() {
-    if ((effectiveLeft > 10) & (effectiveLeft < 60)) { // Object is on the right → Turn right
-        Serial.println("Turning Left");
-        RotateToSmallAngle(25);
-    } 
-    else if ((effectiveRight > 10) & (effectiveRight < 60)) { // Object is on the left → Turn left
-        Serial.println("Turning Right");
-        RotateToSmallAngle(-25);
-    }
-    else if ((center > 10) & (center < 80)){
+    if ((center > 10) & (center < 50)){
       currentState = MOVING_FORWARD;
     }
+    else if ((effectiveLeft > 10) & (effectiveLeft < 50)) { // Object is on the right → Turn right
+        Serial.println("Turning Left");
+        RotateToSmallAngle(-15);
+    } 
+    else if ((effectiveRight > 10) & (effectiveRight < 50)) { // Object is on the left → Turn left
+        Serial.println("Turning Right");
+        RotateToSmallAngle(15);
+    }
+
     else { 
       currentState = SEARCHING;
     }
@@ -364,13 +366,13 @@ void handleBoundaryMovement() {
       break;
     case 0xD:
       StraightBack();
-      RotateToBigAngle(120);
+      RotateToBigAngle(-120);
       Serial.println("D-front-right");
       break;
       case 0xE:
       StopMotors();
       StraightBack();
-      RotateToBigAngle(-120);
+      RotateToBigAngle(120);
       Serial.println("E-front-left");
       break;
     case 0x3:
@@ -572,8 +574,8 @@ void RotateToBigAngle(float setpoint){
   float PWM_L = 0;
   float PWM_R = 0;
   float Kp = 255/setpoint;
-  if (error > 0){
-    while (error >= 2){
+  if (error < 0){
+    while (error <= -2){
       PWM_L = error * Kp;
       PWM_R = error * Kp;
 
@@ -604,7 +606,7 @@ void RotateToBigAngle(float setpoint){
     StopMotors();
   }
   else{
-    while (error <= -2){
+    while (error >= 2){
       PWM_L = error * Kp;
       PWM_R = error * Kp;
 
@@ -668,10 +670,10 @@ void Forward(int maxSpeed) {
   float Kp = 25;
   error = setpoint + angle;
 
-    if (error <= 0){
+    if (error >= 0){
       PWM_R = maxPWMR - abs(error * Kp);
-      if (PWM_R < minSpeed){
-        PWM_R = minSpeed;
+      if (PWM_R < maxSpeed){
+        PWM_R = maxSpeed;
       }
       digitalWrite(L_IN1, HIGH);     // L Forward == maxPWM
       digitalWrite(L_IN2, LOW);          // L Backward == 0
@@ -684,8 +686,8 @@ void Forward(int maxSpeed) {
     }
     else{
       PWM_L = maxPWML - abs(error * Kp);
-      if (PWM_L < minSpeed){
-        PWM_L = minSpeed;
+      if (PWM_L < maxSpeed){
+        PWM_L = maxSpeed;
       }
       digitalWrite(L_IN1, HIGH); // L Forward == maxPWM - error Correction
       digitalWrite(L_IN2, LOW);          // L Backward == 0
@@ -724,7 +726,7 @@ void StopMotors() {
 
 
 void StraightBack(){
-  float maxPWM = 255;
+  float maxPWM = maxPUSH;
   float setpoint = 0;
   float angle = 0;
   float error = setpoint;
