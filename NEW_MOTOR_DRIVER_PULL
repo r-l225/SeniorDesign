@@ -431,7 +431,7 @@ void Forward() {
   float PWM_L = 0.0f;
   float PWM_R = 0.0f;
   float Kp = 3.5;
-  float Ki = 0.5;
+  float Ki = 0.35;
   float Kd = 15;
 
 
