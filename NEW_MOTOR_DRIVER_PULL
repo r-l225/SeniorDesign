@@ -28,8 +28,8 @@ const int R_LED = 23;
 const int G_LED = 32;
 const int B_LED = 33;
 
-const int maxSpeed = 220;      // Maximum PWM duty cycle
-const int minSpeed = 180;
+const int maxSpeed = 255;      // Maximum PWM duty cycle
+const int minSpeed = 90;
 
 
 
@@ -59,6 +59,11 @@ float x_comp = 0.0f;
 float y_comp = 0.0f;
 static float gyroOffset = 0.0f;
 
+  float integral = 0;
+  float derivative = 0;
+  float previousError = 0;
+  float output = 0;
+
 
 int readingIndex = 0; // Index for the circular buffer
 float totalAccel = 0; // Sum of readings
@@ -80,7 +85,7 @@ float readAccel();
 float readGyro();
 uint8_t readIR();
 void StopMotors();
-void StraightForward();
+void Forward();
 void countdownStart();
 void RotateToBigAngle(float setpoint);
 void RotateToSmallAngle(float setpoint);
@@ -226,15 +231,15 @@ void TaskSensors(void *pvParameters) {
         }
         // 1) Read sensor data 
         //xSemaphoreTake(stateMutex, portMAX_DELAY);
-        deltaAngle = readGyro(deltaAngle);
+        //deltaAngle = readGyro(deltaAngle);
         Serial.print("Angle 1 : ");
         Serial.println(deltaAngle);
         //xSemaphoreGive(stateMutex);
-        //deltaAngle = readGyro(deltaAngle);
+        deltaAngle = readGyro(deltaAngle);
         boundary = readIR();
         float forwardAccel = readAccel(); 
          
-        if (boundary == 3){ // Endline Detected
+        if (boundary == 3 | boundary == 12){ // Endline Detected
           changeState(RobotState::STOPPED);
         } 
         else if (boundary == 5){ //Right Boundary Detected
@@ -295,8 +300,8 @@ void TaskNavigation(void *pvParameters) {
         digitalWrite(G_LED, LOW);
 
         // Correct heading in real-time
-        //deltaAngle += readGyro(deltaAngle);
-        StraightForward();
+        //deltaAngle = readGyro(deltaAngle);
+        Forward();
         
         digitalWrite(R_LED, HIGH);
         digitalWrite(G_LED, LOW);
@@ -416,68 +421,51 @@ void BKWD(){
       analogWrite(PWMR, 200);
 }
 
-void StraightForward(){
-  float maxPWMR = 255;
-  float maxPWML = 255;
+void Forward() {
+  float maxPWMR = maxSpeed;
+  float maxPWML = maxSpeed;
   float setpoint = 0.0f;
   float angle = deltaAngle;
-  Serial.print("Angle 2 : ");
-  Serial.println(angle);
+
   float error = setpoint;
   float PWM_L = 0.0f;
   float PWM_R = 0.0f;
+  float Kp = 3.5;
+  float Ki = 0.5;
+  float Kd = 15;
 
-  float Kp = 20;
-  float Kd = 0;
-  error = setpoint + angle;
 
+    error = setpoint + angle;
+    integral += abs(error);
+    derivative = error - previousError;
+    output = Kp * error + Ki * integral + Kd * derivative;
     if (error >= 0){
-      PWM_R = maxPWMR - abs(error * Kp + Kd/error);
-      if (PWM_R < minSpeed){
+      PWM_R = constrain(maxPWMR - abs(output), minSpeed, maxSpeed);
+      PWM_L = constrain(maxPWML, minSpeed, maxSpeed);
+
       digitalWrite(L_IN1, HIGH);     // L Forward == maxPWM
       digitalWrite(L_IN2, LOW);          // L Backward == 0
-      digitalWrite(R_IN1, HIGH); // R Forward == maxPWM - error Correction
-      digitalWrite(R_IN2, LOW); 
-      analogWrite(PWML, maxPWML);  
-      analogWrite(PWMR, minSpeed);
-      }
-      else{
-      digitalWrite(L_IN1, HIGH);     // L Forward == maxPWM
-      digitalWrite(L_IN2, LOW);          // L Backward == 0
-      digitalWrite(R_IN1, HIGH); // R Forward == maxPWM - error Correction
-      digitalWrite(R_IN2, LOW); 
-      analogWrite(PWML, maxPWML);
-      analogWrite(PWMR, int(PWM_R));
-      }
-              // R Backward == 0
-    }
-    else if(error <= 0){
-      PWM_L = maxPWML - abs(error * Kp + Kd/error);
-      if (PWM_L < minSpeed){
-      digitalWrite(L_IN1, HIGH);     // L Forward == maxPWM
-      digitalWrite(L_IN2, LOW);          // L Backward == 0
-      digitalWrite(R_IN1, HIGH); // R Forward == maxPWM - error Correction
-      digitalWrite(R_IN2, LOW);  
-      analogWrite(PWML, maxPWML);  
-      analogWrite(PWMR, minSpeed);
-      }
-      else{
-      digitalWrite(L_IN1, HIGH);     // L Forward == maxPWM
-      digitalWrite(L_IN2, LOW);          // L Backward == 0
-      digitalWrite(R_IN1, HIGH); // R Forward == maxPWM - error Correction
-      digitalWrite(R_IN2, LOW); 
-      analogWrite(PWMR, maxPWMR);  
       analogWrite(PWML, int(PWM_L));
-      }        // R Backward
+
+      digitalWrite(R_IN1, HIGH); // R Forward == maxPWM - error Correction
+      digitalWrite(R_IN2, LOW);          // R Backward == 0
+      analogWrite(PWMR, int(PWM_R));
+
     }
     else{
-      digitalWrite(L_IN1, HIGH);     // L Forward == maxPWM
+      PWM_R = constrain(maxPWMR, minSpeed, maxSpeed);
+      PWM_L = constrain(maxPWML - abs(output), minSpeed, maxSpeed);
+
+      digitalWrite(L_IN1, HIGH); // L Forward == maxPWM - error Correction
       digitalWrite(L_IN2, LOW);          // L Backward == 0
-      digitalWrite(R_IN1, HIGH); // R Forward == maxPWM - error Correction
-      digitalWrite(R_IN2, LOW);        // R Backward
-      analogWrite(PWMR, maxPWMR);  
-      analogWrite(PWML, maxPWML);
+      analogWrite(PWML, int(PWM_L));
+
+      digitalWrite(R_IN1, HIGH);     // R Forward == maxPWM
+      digitalWrite(R_IN2, LOW);          // R Backward
+      analogWrite(PWMR, int(PWM_R));
     }
+    previousError = error;
+  
 }
 
 // ============ StopMotors() ============
@@ -499,6 +487,8 @@ uint8_t readIR() {
   int statusBL = digitalRead(BackLeftSensor);
   int statusBR = digitalRead(BackRightSensor);
   // If both sensors triggered => 3, etc.
+  Serial.println((statusBL << 3) | (statusBR << 2) |(statusFL << 1) | statusFR);
+
   return (statusBL << 3) | (statusBR << 2) |(statusFL << 1) | statusFR; 
 }
 
