@@ -1,3 +1,5 @@
+//newPULL
+
 #include <Arduino.h>
 #include <DFRobot_BMI160.h>
 
@@ -69,7 +71,7 @@ int readingIndex = 0; // Index for the circular buffer
 float totalAccel = 0; // Sum of readings
 float avgAccel = 0; // Average of forward accelerations
 
-const float movementThreshold = 1.05f;
+const float movementThreshold = 1.08f;
 volatile bool boundaryDetected = false;
 volatile bool movementDetected = true;
 
@@ -239,8 +241,11 @@ void TaskSensors(void *pvParameters) {
         boundary = readIR();
         float forwardAccel = readAccel(); 
          
-        if (boundary == 3 | boundary == 12){ // Endline Detected
+        if (boundary == 3 | boundary == 12 | boundary == 9 | boundary == 6 ){ // Endline Detected
           changeState(RobotState::STOPPED);
+          delay(200);
+          deltaAngle = 0;
+          changeState(RobotState::WAITING);
         } 
         else if (boundary == 5){ //Right Boundary Detected
           changeState(RobotState::RECORRECT);
@@ -430,9 +435,9 @@ void Forward() {
   float error = setpoint;
   float PWM_L = 0.0f;
   float PWM_R = 0.0f;
-  float Kp = 3.5;
-  float Ki = 0.35;
-  float Kd = 15;
+  float Kp = 15;
+  float Ki = 0.30;
+  float Kd = 5.5;
 
 
     error = setpoint + angle;
