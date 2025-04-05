@@ -510,26 +510,26 @@ void recorrect(uint8_t bounds){
   StopMotors();
   if (bounds == 5){ // boundary on right
     BKWD();
-    delay(750);
+    delay(500);
     StopMotors();
-    RotateToSmallAngle(60); //
-    FWD();
+    RotateToSmallAngle(15); //
+    //FWD();
     delay(250);
     StopMotors();
     delay(250);
-    RotateToSmallAngle(-30);
+    //RotateToSmallAngle(-30);
     deltaAngle = 0;
   }
   else if(bounds == 10){// boundary on left
     BKWD();
-    delay(750);
+    delay(500);
     StopMotors();
-    RotateToSmallAngle(-60); //
-    FWD();
+    RotateToSmallAngle(-15); //
+    //FWD();
     delay(250);
     StopMotors();
     delay(250);
-    RotateToSmallAngle(30);
+    //RotateToSmallAngle(30);
     deltaAngle = 0;
   }
   deltaAngle = 0;
