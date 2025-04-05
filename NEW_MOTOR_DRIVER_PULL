@@ -71,7 +71,7 @@ int readingIndex = 0; // Index for the circular buffer
 float totalAccel = 0; // Sum of readings
 float avgAccel = 0; // Average of forward accelerations
 
-const float movementThreshold = 1.08f;
+const float movementThreshold = 1.10f;
 volatile bool boundaryDetected = false;
 volatile bool movementDetected = true;
 
@@ -333,7 +333,7 @@ void TaskNavigation(void *pvParameters) {
         break;
     }
 
-    vTaskDelay(100 / portTICK_PERIOD_MS);
+    vTaskDelay(20 / portTICK_PERIOD_MS);
   }
 }
 
@@ -435,15 +435,24 @@ void Forward() {
   float error = setpoint;
   float PWM_L = 0.0f;
   float PWM_R = 0.0f;
-  float Kp = 15;
-  float Ki = 0.30;
-  float Kd = 5.5;
-
+  float Kp = 10.0;
+  float Ki = 0.10;
+  float Kd = 4.5;
 
     error = setpoint + angle;
-    integral += abs(error);
+    integral += error;
+    //rintegral = constrain(integral, -1000, 1000 );
     derivative = error - previousError;
     output = Kp * error + Ki * integral + Kd * derivative;
+/*    if (-0.5 <= error <= 0.5){
+      digitalWrite(L_IN1, HIGH);     // L Forward == maxPWM
+      digitalWrite(L_IN2, LOW);          // L Backward == 0
+      analogWrite(PWML, maxSpeed);
+
+      digitalWrite(R_IN1, HIGH); // R Forward == maxPWM - error Correction
+      digitalWrite(R_IN2, LOW);          // R Backward == 0
+      analogWrite(PWMR, maxSpeed);
+    }*/
     if (error >= 0){
       PWM_R = constrain(maxPWMR - abs(output), minSpeed, maxSpeed);
       PWM_L = constrain(maxPWML, minSpeed, maxSpeed);
@@ -501,24 +510,29 @@ void recorrect(uint8_t bounds){
   StopMotors();
   if (bounds == 5){ // boundary on right
     BKWD();
-    delay(300);
+    delay(750);
+    StopMotors();
     RotateToSmallAngle(60); //
     FWD();
-    delay(200);
-    RotateToSmallAngle(-45);
-    delay(10);
+    delay(250);
+    StopMotors();
+    delay(250);
+    RotateToSmallAngle(-30);
     deltaAngle = 0;
   }
   else if(bounds == 10){// boundary on left
     BKWD();
-    delay(300);
+    delay(750);
+    StopMotors();
     RotateToSmallAngle(-60); //
     FWD();
-    delay(200);
-    RotateToSmallAngle(45);
-    delay(10);
+    delay(250);
+    StopMotors();
+    delay(250);
+    RotateToSmallAngle(30);
     deltaAngle = 0;
   }
+  deltaAngle = 0;
   StopMotors();
   changeState(RobotState::MOVING_FORWARD);
 }
@@ -526,58 +540,68 @@ void recorrect(uint8_t bounds){
 void RotateToSmallAngle(float setpoint){
   float angle = 0;
   float error = setpoint;
-  float PWM_L = maxSpeed;
-  float PWM_R = maxSpeed;
-  float Kp = 220/setpoint;
-  float temp = 0;
+  float PWM_L = 0;
+  float PWM_R = 0;
+
+  float integral = 0;
+  float derivative = 0;
+  float previousError = 0;
+  float output = 0;
+
+  float Kp = 2.5*abs(setpoint)/45;
+  float Ki = 0.2*abs(setpoint)/45;
+  float Kd = 0.15*abs(setpoint)/45;
+
+
+        previousError = abs(error);
+        error = setpoint - angle;
+        integral += abs(error);
+        derivative = error - previousError;
+        output = Kp * abs(error) - Ki * integral + Kd * abs(derivative);
+        output = constrain(output, -maxSpeed, maxSpeed);
   if (error < 0){
     while (error <= -2){
-      PWM_L = error * Kp;
-      PWM_R = error * Kp;
-      if (PWM_R < minSpeed-50){
-        digitalWrite(L_IN1, HIGH);    
-        digitalWrite(L_IN2, LOW);          
-        digitalWrite(R_IN1, LOW); 
-        digitalWrite(R_IN2, HIGH);    
-        analogWrite(PWMR, minSpeed-50);  
-        analogWrite(PWML, minSpeed-50);
-      }
-      else{
-        digitalWrite(L_IN1, HIGH);    
-        digitalWrite(L_IN2, LOW);          
-        digitalWrite(R_IN1, LOW); 
-        digitalWrite(R_IN2, HIGH);    
-        analogWrite(PWMR, int(PWM_R));  
-        analogWrite(PWML, int(PWM_L));
-      }
-      angle += readGyro(temp);
-      error = setpoint - angle;
+      PWM_R = constrain(minSpeed + output, minSpeed, 200);
+      PWM_L = constrain(minSpeed + output, minSpeed, 200);
+
+      digitalWrite(L_IN1, HIGH);     // L Forward == maxPWM
+      digitalWrite(L_IN2, LOW);          // L Backward == 0
+      analogWrite(PWML, int(PWM_L));
+
+      digitalWrite(R_IN1, LOW); // R Forward == maxPWM - error Correction
+      digitalWrite(R_IN2, HIGH);          // R Backward == 0
+      analogWrite(PWMR, int(PWM_R));
+
+        angle = readGyro(angle);
+        previousError = error;
+        error = setpoint - angle;
+        integral += abs(error);
+        derivative = error - previousError;
+        output = Kp * abs(error) - Ki * integral + Kd * abs(derivative);
+        output = constrain(output, -maxSpeed, maxSpeed);
       //// Motor Controls
     }
     StopMotors();
   }
   else{
     while (error >= 2){
-      PWM_L = error * Kp;
-      PWM_R = error * Kp;
-      if (PWM_L < minSpeed-50){
-        digitalWrite(L_IN1, LOW);    
-        digitalWrite(L_IN2, HIGH);          
-        digitalWrite(R_IN1, HIGH); 
-        digitalWrite(R_IN2, LOW);    
-        analogWrite(PWML, minSpeed-50);  
-        analogWrite(PWMR, minSpeed-50);
-      }
-      else{
-        digitalWrite(L_IN1, LOW);    
-        digitalWrite(L_IN2, HIGH);          
-        digitalWrite(R_IN1, HIGH); 
-        digitalWrite(R_IN2, LOW);    
-        analogWrite(PWML, int(PWM_L));  
-        analogWrite(PWMR, int(PWM_R));       // R Backward == 0
-      }
-      angle += readGyro(temp);
-      error = setpoint - angle;
+      PWM_R = constrain(minSpeed + output, minSpeed, 200);
+      PWM_L = constrain(minSpeed + output, minSpeed, 200);
+            
+      digitalWrite(L_IN1, LOW);     // L Forward == maxPWM
+      digitalWrite(L_IN2, HIGH);          // L Backward == 0
+      analogWrite(PWML, int(PWM_L));
+
+      digitalWrite(R_IN1, HIGH); // R Forward == maxPWM - error Correction
+      digitalWrite(R_IN2, LOW);          // R Backward == 0
+      analogWrite(PWMR, int(PWM_R));
+        angle = readGyro(angle);
+        previousError = error;
+        error = setpoint - angle;
+        integral += abs(error);
+        derivative = error - previousError;
+        output = Kp * abs(error) - Ki * integral + Kd * abs(derivative);
+        output = constrain(output, -maxSpeed, maxSpeed);
     }
     StopMotors();
   }
@@ -589,55 +613,64 @@ void RotateToBigAngle(float setpoint){
   float error = setpoint;
   float PWM_L = 0;
   float PWM_R = 0;
-  float Kp = maxSpeed/setpoint;
-  float temp = 0;
+
+  float integral = 0;
+  float derivative = 0;
+  float previousError = 0;
+  float output = 0;
+  float Kp = 8*abs(setpoint)/90;
+  float Ki = 0.5*abs(setpoint)/90;
+  float Kd = 0.3*abs(setpoint)/90;
+ 
+        previousError = abs(error);
+        error = setpoint - angle;
+        integral += abs(error);
+        derivative = error - previousError;
+        output = Kp * abs(error) - Ki * integral + Kd * abs(derivative);
+        output = constrain(output, -maxSpeed, maxSpeed);
   if (error < 0){
     while (error <= -2){
-      PWM_L = error * Kp;
-      PWM_R = error * Kp;
-      if (PWM_R < minSpeed){
-        digitalWrite(L_IN1, HIGH);    
-        digitalWrite(L_IN2, LOW);          
-        digitalWrite(R_IN1, LOW); 
-        digitalWrite(R_IN2, HIGH);    
-        analogWrite(PWMR, minSpeed);  
-        analogWrite(PWML, minSpeed);
-      }
-      else{
-        digitalWrite(L_IN1, HIGH);    
-        digitalWrite(L_IN2, LOW);          
-        digitalWrite(R_IN1, LOW); 
-        digitalWrite(R_IN2, HIGH);    
-        analogWrite(PWMR, int(PWM_R));  
-        analogWrite(PWML, int(PWM_L));
-      }
-      angle += readGyro(temp);
-      error = setpoint - angle;
+      PWM_R = constrain(minSpeed + output, minSpeed+50, maxSpeed);
+      PWM_L = constrain(minSpeed + output, minSpeed+50, maxSpeed);
+
+      digitalWrite(L_IN1, HIGH);     // L Forward == maxPWM
+      digitalWrite(L_IN2, LOW);          // L Backward == 0
+      analogWrite(PWML, int(PWM_L));
+
+      digitalWrite(R_IN1, LOW); // R Forward == maxPWM - error Correction
+      digitalWrite(R_IN2, HIGH);          // R Backward == 0
+      analogWrite(PWMR, int(PWM_R));
+
+        angle = readGyro(angle);
+        previousError = error;
+        error = setpoint - angle;
+        integral += abs(error);
+        derivative = error - previousError;
+        output = Kp * abs(error) - Ki * integral + Kd * abs(derivative);
+        output = constrain(output, -maxSpeed, maxSpeed);
       //// Motor Controls
     }
     StopMotors();
   }
   else{
     while (error >= 2){
-      PWM_L = error * Kp;
-      PWM_R = error * Kp;
-      if (PWM_R < minSpeed){
-        digitalWrite(L_IN1, LOW);    
-        digitalWrite(L_IN2, HIGH);          
-        digitalWrite(R_IN1, HIGH); 
-        digitalWrite(R_IN2, LOW);    
-        analogWrite(PWML, minSpeed);  
-        analogWrite(PWMR, minSpeed);
-      }
-        digitalWrite(L_IN1, LOW);    
-        digitalWrite(L_IN2, HIGH);          
-        digitalWrite(R_IN1, HIGH); 
-        digitalWrite(R_IN2, LOW);    
-        analogWrite(PWML, int(PWM_L));  
-        analogWrite(PWMR, int(PWM_R));         // R Backward == 0
-      
-      angle += readGyro(temp);
-      error = setpoint - angle;
+      PWM_R = constrain(minSpeed + output, minSpeed+50, maxSpeed);
+      PWM_L = constrain(minSpeed + output, minSpeed+50, maxSpeed);
+            
+      digitalWrite(L_IN1, LOW);     // L Forward == maxPWM
+      digitalWrite(L_IN2, HIGH);          // L Backward == 0
+      analogWrite(PWML, int(PWM_L));
+
+      digitalWrite(R_IN1, HIGH); // R Forward == maxPWM - error Correction
+      digitalWrite(R_IN2, LOW);          // R Backward == 0
+      analogWrite(PWMR, int(PWM_R));
+        angle = readGyro(angle);
+        previousError = error;
+        error = setpoint - angle;
+        integral += abs(error);
+        derivative = error - previousError;
+        output = Kp * abs(error) - Ki * integral + Kd * abs(derivative);
+        output = constrain(output, -maxSpeed, maxSpeed);
     }
     StopMotors();
   }
