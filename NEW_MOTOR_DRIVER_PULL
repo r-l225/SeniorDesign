@@ -71,9 +71,15 @@ int readingIndex = 0; // Index for the circular buffer
 float totalAccel = 0; // Sum of readings
 float avgAccel = 0; // Average of forward accelerations
 
-const float movementThreshold = 1.10f;
+const float movementThreshold = 0.4f;
 volatile bool boundaryDetected = false;
 volatile bool movementDetected = true;
+
+unsigned long prevTime = 0;
+unsigned long currentTime = 0;
+float deltaTime = 0;
+float velocity = 0;
+float deltaV = 0;
 
 uint8_t boundary;
 
@@ -239,7 +245,18 @@ void TaskSensors(void *pvParameters) {
         //xSemaphoreGive(stateMutex);
         deltaAngle = readGyro(deltaAngle);
         boundary = readIR();
+        prevTime = currentTime;
         float forwardAccel = readAccel(); 
+        currentTime = millis();
+        deltaTime = (currentTime - prevTime)/1000.0f;
+        deltaV = forwardAccel * deltaTime;
+        if (deltaV > 0.2){
+          velocity += forwardAccel * deltaTime;
+       }
+       else{
+         velocity = 0;
+       }
+
          
         if (boundary == 3 | boundary == 12 | boundary == 9 | boundary == 6 ){ // Endline Detected
           changeState(RobotState::STOPPED);
@@ -261,12 +278,12 @@ void TaskSensors(void *pvParameters) {
         Serial.println(forwardAccel);
 
 // Check if forward acceleration is below the movement threshold
-if (fabs(forwardAccel) < movementThreshold) {
+if (fabs(velocity) < movementThreshold) {
     if (noMovementStart == 0) {
         noMovementStart = millis(); // Start the no-movement timer
     }
     // Check if the no-movement period exceeds 3 seconds
-    if (millis() - noMovementStart > 3000) { // 3-second delay
+    if (millis() - noMovementStart > 2800) { // 3-second delay
         Serial.println("No significant movement detected for 3 seconds. Stopping robot.");
         changeState(RobotState::STOPPED); // Change the robot's state to STOPPED
         noMovementStart = 0; // Reset the timer after stopping
@@ -403,7 +420,8 @@ float readAccel() {
     } else {
         Serial.println("Error reading accelerometer data.");
     }
-    horizontal = sqrt((y_comp * y_comp) - (x_comp * x_comp));
+   // horizontal = sqrt((y_comp * y_comp) - (x_comp * x_comp));
+    horizontal = -9.81*(x_comp);
     delay(50); // Optional delay for stabilization
     return horizontal; // Return forward-backward component
 }
