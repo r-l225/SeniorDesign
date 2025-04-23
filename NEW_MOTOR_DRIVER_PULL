@@ -31,7 +31,7 @@ const int G_LED = 32;
 const int B_LED = 33;
 
 const int maxSpeed = 255;      // Maximum PWM duty cycle
-const int minSpeed = 90;
+const int minSpeed = 160;
 
 
 
@@ -71,7 +71,7 @@ int readingIndex = 0; // Index for the circular buffer
 float totalAccel = 0; // Sum of readings
 float avgAccel = 0; // Average of forward accelerations
 
-const float movementThreshold = 0.4f;
+const float movementThreshold = 1.00f;
 volatile bool boundaryDetected = false;
 volatile bool movementDetected = true;
 
@@ -90,7 +90,7 @@ void changeState(RobotState newState);
 
 void calibrateGyro(int samples = 100);
 float readAccel();
-float readGyro();
+float readGyro(float angle);
 uint8_t readIR();
 void StopMotors();
 void Forward();
@@ -250,8 +250,11 @@ void TaskSensors(void *pvParameters) {
         currentTime = millis();
         deltaTime = (currentTime - prevTime)/1000.0f;
         deltaV = forwardAccel * deltaTime;
-        if (deltaV > 0.2){
-          velocity += forwardAccel * deltaTime;
+        if (deltaV >= 0.21f && deltaV <= 0.31f){
+          velocity += 0.20;
+       }
+       else if (deltaV >= 0.31f){
+        velocity += deltaV;
        }
        else{
          velocity = 0;
@@ -274,9 +277,11 @@ void TaskSensors(void *pvParameters) {
         static unsigned long noMovementStart = 0; // Tracks the start of the no-movement period
 
         // Debugging: Print the current acceleration
-        Serial.print("Forward Acceleration: ");
-        Serial.println(forwardAccel);
+        Serial.print("Forward Velocity: ");
+        Serial.println(velocity);
 
+        Serial.print("Delta Velocity: ");
+        Serial.println(deltaV);
 // Check if forward acceleration is below the movement threshold
 if (fabs(velocity) < movementThreshold) {
     if (noMovementStart == 0) {
@@ -453,9 +458,9 @@ void Forward() {
   float error = setpoint;
   float PWM_L = 0.0f;
   float PWM_R = 0.0f;
-  float Kp = 10.0;
+  float Kp = 15.0;
   float Ki = 0.10;
-  float Kd = 4.5;
+  float Kd = 3.5;
 
     error = setpoint + angle;
     integral += error;
