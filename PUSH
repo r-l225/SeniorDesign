@@ -226,8 +226,8 @@ void TaskSensors(void *pvParameters) {
     xSemaphoreTake(stateMutex, portMAX_DELAY);
 
     centerDetected = (center <= detectionThreshold);
-    leftDetected = (effectiveLeft <= (40));
-    rightDetected = (effectiveRight <= (40));
+    leftDetected = (effectiveLeft <= (detectionThreshold));
+    rightDetected = (effectiveRight <= (detectionThreshold));
 
     bool boundaryDetected = (boundaryCode != 0xF);
 
